@@ -10,3 +10,5 @@ If you do it instantaneous, two atoms could switch places. But can't just check 
 (later that day)
 
 1:00 playing around with GLUT for a UI, seems more useful than figuring out ascii hexes
+
+1:30 got a game loop with timer going. GLUT probably won't scale long term but gets us going for now.

@@ -2,6 +2,7 @@ module Main where
 
 import Lib
 import Graphics.UI.GLUT
+import Data.IORef ( IORef, newIORef, writeIORef )
 
 hexPoly :: [(Float, Float)]
 hexPoly = [
@@ -16,8 +17,8 @@ hexPoly = [
 
 toVertex (x, y) = Vertex3 x y 0.0
 
-display :: DisplayCallback
-display = do
+display :: State -> DisplayCallback
+display state = do
   -- clear all pixels
   clear [ ColorBuffer ]
 
@@ -26,7 +27,13 @@ display = do
   color (Color3 1.0 1.0 (1.0 :: GLfloat))
   -- resolve overloading, not needed in "real" programs
   let vertex3f = vertex :: Vertex3 GLfloat -> IO ()
-  renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
+
+  t <- get $ clock state
+
+  preservingMatrix $ do
+    renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
+    currentRasterPosition $= Vertex4 (-9.7) (-9.7) 0 1
+    renderString Helvetica10 (show t)
 
   -- don't wait!
   -- start processing buffered OpenGL routines
@@ -42,6 +49,24 @@ myInit = do
   loadIdentity
   ortho (-10) 10 (-10) 10 (-1) 1
 
+data State = State { clock :: IORef Integer }
+
+gameLoop :: State -> IO ()
+gameLoop state = do
+  t <- get (clock state)
+
+  let t' = t + 1
+
+  writeIORef (clock state) t'
+
+  addTimerCallback 1000 (gameLoop state)
+  postRedisplay Nothing
+
+mkState :: IO State
+mkState = do
+  t <- newIORef 0
+  return $ State { clock = t }
+
 main :: IO ()
 main = do
   _ <- getArgsAndInitialize
@@ -49,6 +74,8 @@ main = do
   initialWindowSize $= Size 500 500
   initialWindowPosition $= Position 100 100
   _ <- createWindow "hello"
+  state <- mkState
   myInit
-  displayCallback $= display
+  displayCallback $= display state
+  addTimerCallback 1000 (gameLoop state)
   mainLoop
