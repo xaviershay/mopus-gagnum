@@ -3,6 +3,18 @@ module Main where
 import Lib
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
+import Control.Monad (forM_)
+
+data State = State
+  { board :: IORef Board
+  }
+
+mkState :: IO State
+mkState = do
+  b <- newIORef buildBoard
+  return $ State
+    { board = b
+    }
 
 hexPoly :: [(Float, Float)]
 hexPoly = [
@@ -17,6 +29,13 @@ hexPoly = [
 
 toVertex (x, y) = Vertex3 x y 0.0
 
+hexToPixel :: (Integer, Integer) -> (Float, Float)
+hexToPixel (q, r) =
+  (x, y)
+  where
+    x = sqrt 3 * (fromInteger q + fromInteger r / 2.0)
+    y = 3 / 2 * fromInteger r
+
 display :: State -> DisplayCallback
 display state = do
   -- clear all pixels
@@ -28,12 +47,53 @@ display state = do
   -- resolve overloading, not needed in "real" programs
   let vertex3f = vertex :: Vertex3 GLfloat -> IO ()
 
-  t <- get $ clock state
+  b <- get $ board state
+  let t = clock b
+  let ps = pieces b
 
-  preservingMatrix $ do
-    renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
-    currentRasterPosition $= Vertex4 (-9.7) (-9.7) 0 1
-    renderString Helvetica10 (show t)
+  forM_ ps $ \(pos, orientation, d) -> do
+    case d of
+      GrabberPiece _ -> do
+        preservingMatrix $ do
+          let (x, y) = hexToPixel pos
+          translate $ Vector3 x y 0
+          rotate 90 $ Vector3 (0 :: Float) 0 1
+          scale 0.95 0.95 (1.0 :: Float)
+          renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
+
+        preservingMatrix $ do
+          let (x, y) = hexToPixel orientation
+          translate $ Vector3 x y 0
+          rotate 90 $ Vector3 (0 :: Float) 0 1
+          scale 0.95 0.95 (1.0 :: Float)
+          renderPrimitive LineLoop $ mapM_ vertex3f $ map toVertex hexPoly
+      ReagentPiece Reagent { rlayout = Lattice xs } -> do
+        preservingMatrix $ do
+          let (x, y) = hexToPixel pos
+          translate $ Vector3 x y 0
+          forM_ xs $ \(lpos, element) -> do
+            preservingMatrix $ do
+              let (x, y) = hexToPixel lpos
+              translate $ Vector3 x y 0
+              rotate 90 $ Vector3 (0 :: Float) 0 1
+              scale 0.90 0.90 (1.0 :: Float)
+              color (Color3 0.7 0.0 (0.0 :: GLfloat))
+              renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
+      ProductPiece Product { playout = Lattice xs } -> do
+        preservingMatrix $ do
+          let (x, y) = hexToPixel pos
+          translate $ Vector3 x y 0
+          forM_ xs $ \(lpos, element) -> do
+            preservingMatrix $ do
+              let (x, y) = hexToPixel lpos
+              translate $ Vector3 x y 0
+              rotate 90 $ Vector3 (0 :: Float) 0 1
+              scale 0.90 0.90 (1.0 :: Float)
+              color (Color3 0.7 0.0 (0.0 :: GLfloat))
+              renderPrimitive LineLoop $ mapM_ vertex3f $ map toVertex hexPoly
+
+  currentRasterPosition $= Vertex4 (-9.7) (-9.7) 0 1
+  renderString Helvetica10 (show t)
 
   -- don't wait!
   -- start processing buffered OpenGL routines
@@ -49,23 +109,19 @@ myInit = do
   loadIdentity
   ortho (-10) 10 (-10) 10 (-1) 1
 
-data State = State { clock :: IORef Integer }
-
 gameLoop :: State -> IO ()
 gameLoop state = do
-  t <- get (clock state)
+  b <- get (board state)
+  putStrLn $ show b
 
-  let t' = t + 1
+  let b' = stepBoard b
 
-  writeIORef (clock state) t'
+  writeIORef (board state) b'
 
-  addTimerCallback 1000 (gameLoop state)
+  addTimerCallback stepMs (gameLoop state)
   postRedisplay Nothing
 
-mkState :: IO State
-mkState = do
-  t <- newIORef 0
-  return $ State { clock = t }
+stepMs = 500
 
 main :: IO ()
 main = do
@@ -73,9 +129,9 @@ main = do
   initialDisplayMode $= [ SingleBuffered, RGBMode ]
   initialWindowSize $= Size 500 500
   initialWindowPosition $= Position 100 100
-  _ <- createWindow "hello"
+  _ <- createWindow "Mopus Gagnum"
   state <- mkState
   myInit
   displayCallback $= display state
-  addTimerCallback 1000 (gameLoop state)
+  addTimerCallback stepMs (gameLoop state)
   mainLoop

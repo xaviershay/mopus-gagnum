@@ -1,8 +1,7 @@
-module Lib
-    ( someFunc
-    ) where
+module Lib where
 
 import Data.List (find)
+import Debug.Trace
 
 data RadialDirection = RRight | RLeft deriving (Show)
 
@@ -90,12 +89,16 @@ rotateAxialHex RRight (bq, br) (oq, or) = (oq', or')
 applyAction :: Action -> PlacedPiece -> PlacedPiece
 applyAction (Rotate d) (b, o, p) = (b, rotateAxialHex d b o, p)
 
-stepBoard b = b {
-  clock = t
-  , pieces = map (stepPiece (t - 1)) (pieces b)
-}
+stepBoard b = b
+  { clock = t
+  , pieces = map (stepPiece (clock b)) (pieces b)
+  }
   where
-    t = (clock b) + 1
+    t = ((clock b) + 1) `mod` (trace (show maxProgramLength) $ fromIntegral maxProgramLength)
+    maxProgramLength = maximum $ trace (show $ map extractProgramLength (pieces b)) (map extractProgramLength (pieces b)) -- TODO avoid unsafe maximum
+    extractProgramLength (_, _, GrabberPiece Grabber { program = prg }) =
+      maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
+    extractProgramLength _ = 0
 
 someFunc :: IO ()
 someFunc = do
