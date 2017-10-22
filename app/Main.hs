@@ -27,6 +27,9 @@ hexPoly = [
     (1.0000, -0.0000)
   ]
 
+gridSize :: GLdouble
+gridSize = 5.0
+
 toVertex (x, y) = Vertex3 x y 0.0
 
 hexToPixel :: (Integer, Integer) -> (Float, Float)
@@ -92,7 +95,8 @@ display state = do
               color (Color3 0.7 0.0 (0.0 :: GLfloat))
               renderPrimitive LineLoop $ mapM_ vertex3f $ map toVertex hexPoly
 
-  currentRasterPosition $= Vertex4 (-9.7) (-9.7) 0 1
+  color (Color3 1.0 1.0 (1.0 :: GLfloat))
+  currentRasterPosition $= Vertex4 (-4.7) (-4.7) 0 1
   renderString Helvetica10 (show t)
 
   -- don't wait!
@@ -107,7 +111,7 @@ myInit = do
   -- initialize viewing values
   matrixMode $= Projection
   loadIdentity
-  ortho (-10) 10 (-10) 10 (-1) 1
+  ortho (-gridSize) gridSize (-gridSize) gridSize (-1) 1
 
 gameLoop :: State -> IO ()
 gameLoop state = do
@@ -127,7 +131,7 @@ main :: IO ()
 main = do
   _ <- getArgsAndInitialize
   initialDisplayMode $= [ SingleBuffered, RGBMode ]
-  initialWindowSize $= Size 500 500
+  initialWindowSize $= Size 250 250
   initialWindowPosition $= Position 100 100
   _ <- createWindow "Mopus Gagnum"
   state <- mkState
