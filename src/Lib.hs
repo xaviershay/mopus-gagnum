@@ -2,11 +2,15 @@ module Lib
     ( someFunc
     ) where
 
+import Data.List (find)
+
+data RadialDirection = RRight | RLeft deriving (Show)
+
 type Position = (Integer, Integer)
 
 data Trigger = TimeTrigger Integer deriving (Show)
 
-data Action = RotateAntiClockwise | RotateClockwise | ClawClose | ClawOpen deriving (Show)
+data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show)
 
 type Program = [(Trigger, [Action])]
 
@@ -29,9 +33,11 @@ data Product = Product {
 
 data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show)
 
+type PlacedPiece = (Position, Position, Piece)
+
 data Board = Board {
     clock :: Integer
-  , pieces :: [(Position, Position, Piece)]
+  , pieces :: [PlacedPiece]
   --tracks :: [Track]
 } deriving (Show)
 
@@ -41,10 +47,11 @@ buildBoard = Board {
   --tracks = [],
   clock = 0,
   pieces = [placePiece (0, 0) (1, 0) (GrabberPiece $ Grabber { program =
-    [ (TimeTrigger 0, [ClawClose
-    , RotateClockwise
-    , ClawOpen
-    , RotateAntiClockwise
+    [ (TimeTrigger 0, [
+    -- ClawClose
+      Rotate RRight
+    --, ClawOpen
+    , Rotate RLeft
     ])]}),
     placePiece (1, 0) (0, 0) (ReagentPiece $ Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),
@@ -53,5 +60,45 @@ buildBoard = Board {
   ]
 }
 
+matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
+matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + (fromIntegral $ length as))
+
+stepPiece :: Integer -> PlacedPiece -> PlacedPiece
+stepPiece t p@(b, o, GrabberPiece g) =
+  case find (matchTimeTrigger t) (program g) of
+    Nothing -> p
+    Just (TimeTrigger t', as) -> applyAction (as !! fromIntegral (t - t')) p
+stepPiece t p = p -- TODO
+
+-- Implementation from https://www.redblobgames.com/grids/hexagons/#rotation
+-- with directions switched to match diagram at
+-- https://github.com/mhwombat/grid/wiki/Hexagonal-tiles
+rotateAxialHex :: RadialDirection -> Position -> Position -> Position
+rotateAxialHex RLeft (bq, br) (oq, or) = (oq', or')
+  where
+    (nq, nr) = (oq - bq, or - br)
+    (x, y, z) = (nq, -nq - nr, nr)
+    (x', y', z') = (-z, -x, -y)
+    (oq', or') = (x' + bq, z' + br)
+rotateAxialHex RRight (bq, br) (oq, or) = (oq', or')
+  where
+    (nq, nr) = (oq - bq, or - br)
+    (x, y, z) = (nq, -nq - nr, nr)
+    (x', y', z') = (-y, -z, -x)
+    (oq', or') = (x' + bq, z' + br)
+
+applyAction :: Action -> PlacedPiece -> PlacedPiece
+applyAction (Rotate d) (b, o, p) = (b, rotateAxialHex d b o, p)
+
+stepBoard b = b {
+  clock = t
+  , pieces = map (stepPiece (t - 1)) (pieces b)
+}
+  where
+    t = (clock b) + 1
+
 someFunc :: IO ()
-someFunc = putStrLn $ show buildBoard
+someFunc = do
+  putStrLn $ show (buildBoard)
+  putStrLn $ show (stepBoard buildBoard)
+  putStrLn $ show (stepBoard . stepBoard $ buildBoard)
