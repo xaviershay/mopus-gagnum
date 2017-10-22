@@ -27,6 +27,7 @@ executable mopus-gagnum-exe
   build-depends:       base
                      , mopus-gagnum
                      , grid
+                     , GLUT
   default-language:    Haskell2010
 
 test-suite mopus-gagnum-test
