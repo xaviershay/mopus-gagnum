@@ -4,6 +4,7 @@ import Lib
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
 import Control.Monad (forM_)
+import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
 
 data State = State
   { board :: IORef Board
@@ -160,6 +161,10 @@ gameLoop state = do
 
 stepMs = 500
 
+keyboard :: KeyboardMouseCallback
+keyboard (Char '\27') Down _ _ = exitWith ExitSuccess
+keyboard _ _ _ _ = return ()
+
 main :: IO ()
 main = do
   _ <- getArgsAndInitialize
@@ -170,5 +175,6 @@ main = do
   state <- mkState
   myInit
   displayCallback $= display state
+  keyboardMouseCallback $= Just keyboard
   addTimerCallback stepMs (gameLoop state)
   mainLoop
