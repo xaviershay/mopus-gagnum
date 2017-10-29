@@ -1,6 +1,7 @@
 module Main where
 
 import Lib
+import Hex
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
 import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
