@@ -6,6 +6,7 @@ import Data.IORef ( IORef, newIORef, writeIORef )
 import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
 import Control.Monad (forM_)
 import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
+import Debug.Trace
 
 data State = State
   { board :: IORef Board
@@ -91,7 +92,7 @@ display state = do
 
   forM_ ps $ \(pos, (o, o'), d) -> do
     case d of
-      GrabberPiece _ -> do
+      GrabberPiece Grabber { closed = isClosed } -> do
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
           translate $ Vector3 x y 0
@@ -107,6 +108,11 @@ display state = do
           translate $ Vector3 (sqrt(3) :: Float) 0 0
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
+
+          if isClosed then
+            color (Color3 0.0 0.7 (0.0 :: GLfloat))
+          else
+            return ()
           renderPrimitive LineLoop $ mapM_ vertex3f $ map toVertex hexPoly
       ReagentPiece Reagent { rlayout = Lattice xs } -> do
         preservingMatrix $ do
@@ -161,6 +167,7 @@ gameLoop state = do
   let d = (realToFrac $ diffUTCTime t' t) / stepTime
   let b' = if d + (sinceLastUpdate b) >= 1 then
              -- TODO: Some protection for falling behind maybe
+             --trace (show $ stepBoard b)
              (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - 1 }
            else
              b { sinceLastUpdate = (sinceLastUpdate b) + d }
@@ -170,7 +177,7 @@ gameLoop state = do
 
   postRedisplay Nothing
 
-stepTime = 0.5
+stepTime = 0.5 
 stepMs = round $ stepTime * 1000
 
 keyboard :: KeyboardMouseCallback

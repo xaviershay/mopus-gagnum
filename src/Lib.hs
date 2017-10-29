@@ -16,7 +16,9 @@ data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show)
 type Program = [(Trigger, [Action])]
 
 data Grabber = Grabber {
-  program :: Program
+    program :: Program
+  , closed :: Bool
+  , contents :: Maybe (Lattice Element)
 } deriving (Show)
 
 data Element = Fire | Water | Earth | Air deriving (Show)
@@ -51,11 +53,14 @@ buildBoard = Board {
   sinceLastUpdate = 0,
   pieces = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
     [ (TimeTrigger 0, [
-    -- ClawClose
-      Rotate RRight
-    --, ClawOpen
+      ClawClose
+    , Rotate RRight
+    , ClawOpen
     , Rotate RLeft
-    ])]}),
+    ])]
+    , closed = False
+    , contents = Nothing
+    }),
     placePiece (1, 0) nullRotation (ReagentPiece $ Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),
     placePiece (1, -1) nullRotation (ProductPiece $ Product { playout =
@@ -94,9 +99,16 @@ rotateDegrees :: RadialDirection -> Int -> Int
 rotateDegrees RLeft x = x + 60 `mod` 360
 rotateDegrees RRight x = (x - 60 + 360) `mod` 360
 
+-- TODO: Type signature here sucks
 -- TODO: Verify o == o' at this point
 applyAction :: Action -> PlacedPiece -> PlacedPiece
 applyAction (Rotate d) (b, (o, o'), p) = (b, (o', rotateDegrees d o'), p)
+applyAction ClawClose (b, (o, o'), GrabberPiece g@Grabber { closed = False }) =
+  (b, (o', o'), GrabberPiece g { closed = True }) 
+applyAction ClawOpen (b, (o, o'), GrabberPiece g@Grabber { closed = True }) =
+  (b, (o', o'), GrabberPiece g { closed = False }) 
+applyAction _ x = x
+  
 
 
 stepBoard b = b
