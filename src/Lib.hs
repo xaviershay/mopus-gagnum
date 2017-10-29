@@ -6,7 +6,8 @@ import Debug.Trace
 data RadialDirection = RRight | RLeft deriving (Show)
 
 type Position = (Integer, Integer)
-type Rotation = Int
+type Rotation = (Int, Int) -- (From, Target)
+nullRotation = (0, 0)
 
 data Trigger = TimeTrigger Integer deriving (Show)
 
@@ -37,6 +38,7 @@ type PlacedPiece = (Position, Rotation, Piece)
 
 data Board = Board {
     clock :: Integer
+  , sinceLastUpdate :: Double
   , pieces :: [PlacedPiece]
   --tracks :: [Track]
 } deriving (Show)
@@ -46,16 +48,17 @@ placePiece b o p = (b, o, p)
 buildBoard = Board {
   --tracks = [],
   clock = 0,
-  pieces = [placePiece (0, 0) 0 (GrabberPiece $ Grabber { program =
+  sinceLastUpdate = 0,
+  pieces = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
     [ (TimeTrigger 0, [
     -- ClawClose
       Rotate RRight
     --, ClawOpen
     , Rotate RLeft
     ])]}),
-    placePiece (1, 0) 0 (ReagentPiece $ Reagent { rlayout =
+    placePiece (1, 0) nullRotation (ReagentPiece $ Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),
-    placePiece (1, -1) 0 (ProductPiece $ Product { playout =
+    placePiece (1, -1) nullRotation (ProductPiece $ Product { playout =
       Lattice [((0, 0), Fire)]})
   ]
 }
@@ -87,12 +90,14 @@ stepPiece t p = p -- TODO
 --    (x', y', z') = (-y, -z, -x)
 --    (oq', or') = (x' + bq, z' + br)
 
-rotateDegrees :: RadialDirection -> Rotation -> Rotation
+rotateDegrees :: RadialDirection -> Int -> Int
 rotateDegrees RLeft x = x + 60 `mod` 360
 rotateDegrees RRight x = (x - 60 + 360) `mod` 360
 
+-- TODO: Verify o == o' at this point
 applyAction :: Action -> PlacedPiece -> PlacedPiece
-applyAction (Rotate d) (b, o, p) = (b, rotateDegrees d o, p)
+applyAction (Rotate d) (b, (o, o'), p) = (b, (o', rotateDegrees d o'), p)
+
 
 stepBoard b = b
   { clock = t
@@ -105,8 +110,8 @@ stepBoard b = b
       maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
     extractProgramLength _ = 0
 
-someFunc :: IO ()
-someFunc = do
-  putStrLn $ show (buildBoard)
-  putStrLn $ show (stepBoard buildBoard)
-  putStrLn $ show (stepBoard . stepBoard $ buildBoard)
+--someFunc :: IO ()
+--someFunc = do
+--  putStrLn $ show (buildBoard)
+--  putStrLn $ show (stepBoard buildBoard)
+--  putStrLn $ show (stepBoard . stepBoard $ buildBoard)

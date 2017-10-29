@@ -3,18 +3,22 @@ module Main where
 import Lib
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
+import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
 import Control.Monad (forM_)
 import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
 
 data State = State
   { board :: IORef Board
+  , lastUpdate :: IORef UTCTime
   }
 
 mkState :: IO State
 mkState = do
+  t <- newIORef =<< getCurrentTime
   b <- newIORef buildBoard
   return $ State
     { board = b
+    , lastUpdate = t
     }
 
 hexPoly :: [(Float, Float)]
@@ -85,7 +89,7 @@ display state = do
   let t = clock b
   let ps = pieces b
 
-  forM_ ps $ \(pos, orientation, d) -> do
+  forM_ ps $ \(pos, (o, o'), d) -> do
     case d of
       GrabberPiece _ -> do
         preservingMatrix $ do
@@ -98,8 +102,7 @@ display state = do
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
           translate $ Vector3 x y 0
-          --rotate 90 $ Vector3 (0 :: Float) 0 1
-          rotate (fromIntegral orientation) $ Vector3 (0 :: Float) 0 1
+          rotate (fromIntegral o') $ Vector3 (0 :: Float) 0 1
           translate $ Vector3 (sqrt(3) :: Float) 0 0
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
@@ -149,17 +152,24 @@ myInit = do
 
 gameLoop :: State -> IO ()
 gameLoop state = do
+  t <- get (lastUpdate state)
+  t' <- getCurrentTime -- TODO: Handle time jumps
   b <- get (board state)
-  putStrLn $ show b
 
-  let b' = stepBoard b
+  let d = realToFrac $ diffUTCTime t' t
+  let b' = if d + (sinceLastUpdate b) >= stepTime then
+             -- TODO: Some protection for falling behind maybe
+             (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - stepTime }
+           else
+             b { sinceLastUpdate = (sinceLastUpdate b) + d }
 
+  writeIORef (lastUpdate state) t'
   writeIORef (board state) b'
 
-  addTimerCallback stepMs (gameLoop state)
   postRedisplay Nothing
 
-stepMs = 500
+stepTime = 0.5
+stepMs = round $ stepTime * 1000
 
 keyboard :: KeyboardMouseCallback
 keyboard (Char '\27') Down _ _ = exitWith ExitSuccess
@@ -176,5 +186,5 @@ main = do
   myInit
   displayCallback $= display state
   keyboardMouseCallback $= Just keyboard
-  addTimerCallback stepMs (gameLoop state)
+  idleCallback $= (Just $ gameLoop state)
   mainLoop
