@@ -7,7 +7,7 @@ data RadialDirection = RRight | RLeft deriving (Show)
 
 type Position = (Integer, Integer)
 type Rotation = (Int, Int) -- (From, Target)
-nullRotation = (0, 0)
+nullRotation = (360, 360)
 
 data Trigger = TimeTrigger Integer deriving (Show)
 

@@ -76,8 +76,7 @@ hexRound = cubeToAxial . cubeRound . axialToCube
 
 display :: State -> DisplayCallback
 display state = do
-  -- clear all pixels
-  clear [ ColorBuffer ]
+  clear [ColorBuffer, DepthBuffer]
 
   -- draw white polygon (rectangle) with corners at
   -- (0.25, 0.25, 0.0) and (0.75, 0.75, 0.0)
@@ -88,6 +87,7 @@ display state = do
   b <- get $ board state
   let t = clock b
   let ps = pieces b
+  let delta = sinceLastUpdate b
 
   forM_ ps $ \(pos, (o, o'), d) -> do
     case d of
@@ -101,8 +101,9 @@ display state = do
 
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
-          translate $ Vector3 x y 0
-          rotate (fromIntegral o') $ Vector3 (0 :: Float) 0 1
+          let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
+          translate $ Vector3 x y (0.1)
+          rotate o'' $ Vector3 (0 :: Double) 0 1
           translate $ Vector3 (sqrt(3) :: Float) 0 0
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
@@ -138,13 +139,14 @@ display state = do
 
   -- don't wait!
   -- start processing buffered OpenGL routines
-  flush
+  swapBuffers
 
 myInit :: IO ()
 myInit = do
   -- select clearing color
   clearColor $= Color4 0 0 0 0
 
+  depthFunc $= Just Lequal
   -- initialize viewing values
   matrixMode $= Projection
   loadIdentity
@@ -156,10 +158,10 @@ gameLoop state = do
   t' <- getCurrentTime -- TODO: Handle time jumps
   b <- get (board state)
 
-  let d = realToFrac $ diffUTCTime t' t
-  let b' = if d + (sinceLastUpdate b) >= stepTime then
+  let d = (realToFrac $ diffUTCTime t' t) / stepTime
+  let b' = if d + (sinceLastUpdate b) >= 1 then
              -- TODO: Some protection for falling behind maybe
-             (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - stepTime }
+             (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - 1 }
            else
              b { sinceLastUpdate = (sinceLastUpdate b) + d }
 
@@ -178,7 +180,7 @@ keyboard _ _ _ _ = return ()
 main :: IO ()
 main = do
   _ <- getArgsAndInitialize
-  initialDisplayMode $= [ SingleBuffered, RGBMode ]
+  initialDisplayMode $= [ DoubleBuffered, RGBMode, WithDepthBuffer ]
   initialWindowSize $= Size 250 250
   initialWindowPosition $= Position 100 100
   _ <- createWindow "Mopus Gagnum"
