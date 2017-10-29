@@ -104,8 +104,8 @@ stepBoard b = b
   , pieces = map (stepPiece (clock b)) (pieces b)
   }
   where
-    t = ((clock b) + 1) `mod` (trace (show maxProgramLength) $ fromIntegral maxProgramLength)
-    maxProgramLength = maximum $ trace (show $ map extractProgramLength (pieces b)) (map extractProgramLength (pieces b)) -- TODO avoid unsafe maximum
+    t = ((clock b) + 1) `mod` fromIntegral maxProgramLength
+    maxProgramLength = maximum $ (map extractProgramLength (pieces b)) -- TODO avoid unsafe maximum
     extractProgramLength (_, _, GrabberPiece Grabber { program = prg }) =
       maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
     extractProgramLength _ = 0
