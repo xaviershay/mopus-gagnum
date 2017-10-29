@@ -131,7 +131,7 @@ gameLoop state = do
   let d = (realToFrac $ diffUTCTime t' t) / stepTime
   let b' = if d + (sinceLastUpdate b) >= 1 then
              -- TODO: Some protection for falling behind maybe
-             --trace (show $ stepBoard b)
+             trace (show $ stepBoard b)
              (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - 1 }
            else
              b { sinceLastUpdate = (sinceLastUpdate b) + d }
