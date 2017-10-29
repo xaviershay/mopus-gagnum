@@ -39,6 +39,36 @@ hexToPixel (q, r) =
     x = sqrt 3 * (fromInteger q + fromInteger r / 2.0)
     y = 3 / 2 * fromInteger r
 
+pixelToHex :: (Float, Float) -> (Integer, Integer)
+pixelToHex (x, y) =
+  hexRound (q, r)
+  where
+    q = (x * sqrt(3)/3 - y / 3)
+    r = y * 2/3
+
+cubeRound :: (Float, Float, Float) -> (Integer, Integer, Integer)
+cubeRound (x, y, z) =
+    if x_diff > y_diff && x_diff > z_diff then
+      (-ry-rz, ry, rz)
+    else if y_diff > z_diff then
+      (rx, -rx-rz, rz)
+    else
+      (rx, ry, -rx-ry)
+  where
+    rx = (round x) :: Integer
+    ry = (round y) :: Integer
+    rz = (round z) :: Integer
+
+    x_diff = abs (fromIntegral rx - x)
+    y_diff = abs (fromIntegral ry - y)
+    z_diff = abs (fromIntegral rz - z)
+
+axialToCube (q, r) = (q, r, -q-r)
+cubeToAxial (x, y, z) = (x, z)
+
+hexRound :: (Float, Float) -> (Integer, Integer)
+hexRound = cubeToAxial . cubeRound . axialToCube
+
 display :: State -> DisplayCallback
 display state = do
   -- clear all pixels
@@ -65,8 +95,11 @@ display state = do
           renderPrimitive Polygon $ mapM_ vertex3f $ map toVertex hexPoly
 
         preservingMatrix $ do
-          let (x, y) = hexToPixel orientation
+          let (x, y) = hexToPixel pos
           translate $ Vector3 x y 0
+          --rotate 90 $ Vector3 (0 :: Float) 0 1
+          rotate (fromIntegral orientation) $ Vector3 (0 :: Float) 0 1
+          translate $ Vector3 (sqrt(3) :: Float) 0 0
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
           renderPrimitive LineLoop $ mapM_ vertex3f $ map toVertex hexPoly

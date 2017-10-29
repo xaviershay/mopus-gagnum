@@ -6,6 +6,7 @@ import Debug.Trace
 data RadialDirection = RRight | RLeft deriving (Show)
 
 type Position = (Integer, Integer)
+type Rotation = Int
 
 data Trigger = TimeTrigger Integer deriving (Show)
 
@@ -32,7 +33,7 @@ data Product = Product {
 
 data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show)
 
-type PlacedPiece = (Position, Position, Piece)
+type PlacedPiece = (Position, Rotation, Piece)
 
 data Board = Board {
     clock :: Integer
@@ -45,16 +46,16 @@ placePiece b o p = (b, o, p)
 buildBoard = Board {
   --tracks = [],
   clock = 0,
-  pieces = [placePiece (0, 0) (1, 0) (GrabberPiece $ Grabber { program =
+  pieces = [placePiece (0, 0) 0 (GrabberPiece $ Grabber { program =
     [ (TimeTrigger 0, [
     -- ClawClose
       Rotate RRight
     --, ClawOpen
     , Rotate RLeft
     ])]}),
-    placePiece (1, 0) (0, 0) (ReagentPiece $ Reagent { rlayout =
+    placePiece (1, 0) 0 (ReagentPiece $ Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),
-    placePiece (1, -1) (0, 0) (ProductPiece $ Product { playout =
+    placePiece (1, -1) 0 (ProductPiece $ Product { playout =
       Lattice [((0, 0), Fire)]})
   ]
 }
@@ -72,22 +73,26 @@ stepPiece t p = p -- TODO
 -- Implementation from https://www.redblobgames.com/grids/hexagons/#rotation
 -- with directions switched to match diagram at
 -- https://github.com/mhwombat/grid/wiki/Hexagonal-tiles
-rotateAxialHex :: RadialDirection -> Position -> Position -> Position
-rotateAxialHex RLeft (bq, br) (oq, or) = (oq', or')
-  where
-    (nq, nr) = (oq - bq, or - br)
-    (x, y, z) = (nq, -nq - nr, nr)
-    (x', y', z') = (-z, -x, -y)
-    (oq', or') = (x' + bq, z' + br)
-rotateAxialHex RRight (bq, br) (oq, or) = (oq', or')
-  where
-    (nq, nr) = (oq - bq, or - br)
-    (x, y, z) = (nq, -nq - nr, nr)
-    (x', y', z') = (-y, -z, -x)
-    (oq', or') = (x' + bq, z' + br)
+--rotateAxialHex :: RadialDirection -> Position -> Position -> Position
+--rotateAxialHex RLeft (bq, br) (oq, or) = (oq', or')
+--  where
+--    (nq, nr) = (oq - bq, or - br)
+--    (x, y, z) = (nq, -nq - nr, nr)
+--    (x', y', z') = (-z, -x, -y)
+--    (oq', or') = (x' + bq, z' + br)
+--rotateAxialHex RRight (bq, br) (oq, or) = (oq', or')
+--  where
+--    (nq, nr) = (oq - bq, or - br)
+--    (x, y, z) = (nq, -nq - nr, nr)
+--    (x', y', z') = (-y, -z, -x)
+--    (oq', or') = (x' + bq, z' + br)
+
+rotateDegrees :: RadialDirection -> Rotation -> Rotation
+rotateDegrees RLeft x = x + 60 `mod` 360
+rotateDegrees RRight x = (x - 60 + 360) `mod` 360
 
 applyAction :: Action -> PlacedPiece -> PlacedPiece
-applyAction (Rotate d) (b, o, p) = (b, rotateAxialHex d b o, p)
+applyAction (Rotate d) (b, o, p) = (b, rotateDegrees d o, p)
 
 stepBoard b = b
   { clock = t
