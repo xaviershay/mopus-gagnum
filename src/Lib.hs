@@ -1,17 +1,22 @@
 module Lib where
 
 import Data.List (find)
+import Data.Maybe (mapMaybe)
 import Debug.Trace
+import Control.Monad.State
+import Control.Monad.Identity
 
-data RadialDirection = RRight | RLeft deriving (Show)
+type EvalBoard a = StateT Board' Identity a
+
+data RadialDirection = RRight | RLeft deriving (Show, Eq)
 
 type Position = (Integer, Integer)
-type Rotation = (Int, Int) -- (From, Target)
-nullRotation = (360, 360)
+type Rotation = Int -- (From, Target)
+nullRotation = 360
 
-data Trigger = TimeTrigger Integer deriving (Show)
+data Trigger = TimeTrigger Integer deriving (Show, Eq)
 
-data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show)
+data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show, Eq)
 
 type Program = [(Trigger, [Action])]
 
@@ -19,38 +24,105 @@ data Grabber = Grabber {
     program :: Program
   , closed :: Bool
   , contents :: Maybe (Lattice Element)
-} deriving (Show)
+} deriving (Show, Eq)
 
-data Element = Fire | Water | Earth | Air deriving (Show)
+data Element = Fire | Water | Earth | Air deriving (Show, Eq)
 
-data Lattice a = Lattice [(Position, a)] deriving (Show) -- TODO: Add bonds
+data Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
 
 -- TODO: combine Reagent / Product definitions somehow?
 data Reagent = Reagent {
   rlayout :: Lattice Element
-} deriving (Show)
+} deriving (Show, Eq)
 
 data Product = Product {
   playout :: Lattice Element
-} deriving (Show)
+} deriving (Show, Eq)
 
-data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show)
+data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show, Eq)
 
 type PlacedPiece = (Position, Rotation, Piece)
 
-data Board = Board {
-    clock :: Integer
-  , sinceLastUpdate :: Double
-  , pieces :: [PlacedPiece]
-  --tracks :: [Track]
+type PiecePosition = ((Position, Position), (Rotation, Rotation))
+type GrabTarget = (Position, Position, Piece)
+
+data Board' = Board' {
+    _clock :: Integer
+  , _sinceLastUpdate :: Double
+  , _map :: [(PiecePosition, Piece)]
 } deriving (Show)
 
-placePiece b o p = (b, o, p)
+placePiece b o p = (((b, b), (o, o)), p)
 
-pieceAt :: Board -> Position -> Maybe Piece
-pieceAt b p = extractPiece <$> find (\(p', _, _) -> p == p') (pieces b)
+stepGrabbers :: EvalBoard ()
+stepGrabbers = do
+  brd <- get
 
-extractPiece (_, _, x) = x
+  forM_ (mapMaybe f $ _map brd) stepGrabber
+
+  where
+    f (pos, GrabberPiece grabber) = Just (pos, grabber)
+    f _                           = Nothing
+
+stepGrabber :: (PiecePosition, Grabber) -> EvalBoard ()
+stepGrabber x@(_, grabber) = do
+  brd <- get
+  let t = _clock brd
+
+  case find (matchTimeTrigger t) (program grabber) of
+    Nothing -> return ()
+    Just (TimeTrigger t', as) -> applyAction' x (as !! fromIntegral (t - t'))
+
+applyAction' :: (PiecePosition, Grabber) -> Action -> EvalBoard ()
+applyAction' old@(pos, grabber) ClawClose = do
+  let grabber' = grabber { closed = True }
+  
+  replaceGrabber old (stayStill pos, grabber')
+
+applyAction' old@(pos, grabber) ClawOpen = do
+  let grabber' = grabber { closed = False }
+  
+  replaceGrabber old (stayStill pos, grabber')
+
+applyAction' old@(pos, grabber) (Rotate direction) = do
+  let pos' = rotateDegrees direction pos
+  replaceGrabber old (pos', grabber)
+
+stayStill ((_, p'), (_, o')) = ((p', p'), (o', o'))
+
+rotateDegrees :: RadialDirection -> PiecePosition -> PiecePosition
+rotateDegrees direction ((_, p'), (_, o'))  = ((p', p'), (o', o''))
+  where
+    o'' = o' + toDegrees direction + 360 `mod` 360
+    toDegrees RRight = (-60)
+    toDegrees RLeft = 60
+
+replaceGrabber :: (PiecePosition, Grabber) -> (PiecePosition, Grabber) -> EvalBoard ()
+replaceGrabber (op, og) (np, ng) = do
+  brd <- get
+  let old' = (op, GrabberPiece og)
+  let new' = (np, GrabberPiece ng)
+
+  put $ brd { _map = map (\x -> if x == old' then new' else x) (_map brd) }
+
+advanceClock :: EvalBoard ()
+advanceClock = do
+  brd <- get
+  
+  let maxProgramLength = maximum $ (map extractProgramLength (_map brd)) -- TODO avoid unsafe maximum
+
+  let t = _clock brd
+  let t' = (t + 1) `mod` fromIntegral maxProgramLength
+
+  put $ brd { _clock = t' }
+
+  where
+    extractProgramLength (_, GrabberPiece Grabber { program = prg }) =
+      maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
+    extractProgramLength _ = 0
+
+stepBoard :: Board' -> Board'
+stepBoard b = runIdentity $ execStateT (stepGrabbers >> advanceClock) b
 
 hexToPixel :: (Integer, Integer) -> (Float, Float)
 hexToPixel (q, r) =
@@ -89,11 +161,10 @@ cubeToAxial (x, y, z) = (x, z)
 hexRound :: (Float, Float) -> (Integer, Integer)
 hexRound = cubeToAxial . cubeRound . axialToCube
 
-buildBoard = Board {
-  --tracks = [],
-  clock = 0,
-  sinceLastUpdate = 0,
-  pieces = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
+buildBoard = Board' {
+  _clock = 0,
+  _sinceLastUpdate = 0,
+  _map = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
     [ (TimeTrigger 0, [
       ClawClose
     , Rotate RRight
@@ -113,73 +184,4 @@ buildBoard = Board {
 matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
 matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + (fromIntegral $ length as))
 
-stepPiece :: Board -> Integer -> PlacedPiece -> PlacedPiece
-stepPiece brd t p@(b, o, GrabberPiece g) =
-  case find (matchTimeTrigger t) (program g) of
-    Nothing -> p
-    Just (TimeTrigger t', as) -> applyAction brd (as !! fromIntegral (t - t')) p
-stepPiece brd t p = p -- TODO
-
--- Implementation from https://www.redblobgames.com/grids/hexagons/#rotation
--- with directions switched to match diagram at
--- https://github.com/mhwombat/grid/wiki/Hexagonal-tiles
---rotateAxialHex :: RadialDirection -> Position -> Position -> Position
---rotateAxialHex RLeft (bq, br) (oq, or) = (oq', or')
---  where
---    (nq, nr) = (oq - bq, or - br)
---    (x, y, z) = (nq, -nq - nr, nr)
---    (x', y', z') = (-z, -x, -y)
---    (oq', or') = (x' + bq, z' + br)
---rotateAxialHex RRight (bq, br) (oq, or) = (oq', or')
---  where
---    (nq, nr) = (oq - bq, or - br)
---    (x, y, z) = (nq, -nq - nr, nr)
---    (x', y', z') = (-y, -z, -x)
---    (oq', or') = (x' + bq, z' + br)
-
 toRadians d = fromIntegral d * pi / 180
-
-rotateDegrees :: RadialDirection -> Int -> Int
-rotateDegrees RLeft x = x + 60 `mod` 360
-rotateDegrees RRight x = (x - 60 + 360) `mod` 360
-
--- TODO: Type signature here sucks
--- TODO: Verify o == o' at this point if rotating
-applyAction :: Board -> Action -> PlacedPiece -> PlacedPiece
-applyAction _ (Rotate d) (b, (o, o'), p) = (b, (o', rotateDegrees d o'), p)
-applyAction brd ClawClose (b, (o, o'), GrabberPiece g@Grabber { closed = False }) =
-  let (x, y) = (cos (toRadians o') * sqrt(3), sin $ toRadians o') in
-  let (q, r) = pixelToHex (x, y) in
-  let atLocation = pieceAt brd (q, r) in
-
-  (b, (o', o'), GrabberPiece g { closed = True, contents = reifyPiece =<< atLocation }) 
-
--- TODO: Place contents on board
-applyAction _ ClawOpen (b, (o, o'), GrabberPiece g@Grabber { closed = True }) =
-  (b, (o', o'), GrabberPiece g { closed = False, contents = Nothing }) 
-applyAction _ _ x = x
-  
-
--- TODO: This is wrong. Reagent's should produce lattices that are then placed
--- on the board
-reifyPiece :: Piece -> Maybe (Lattice Element)
-reifyPiece (ReagentPiece Reagent { rlayout = x }) = Just x
-reifyPiece _ = Nothing
-
-
-stepBoard b = b
-  { clock = t
-  , pieces = map (stepPiece b (clock b)) (pieces b)
-  }
-  where
-    t = ((clock b) + 1) `mod` fromIntegral maxProgramLength
-    maxProgramLength = maximum $ (map extractProgramLength (pieces b)) -- TODO avoid unsafe maximum
-    extractProgramLength (_, _, GrabberPiece Grabber { program = prg }) =
-      maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
-    extractProgramLength _ = 0
-
---someFunc :: IO ()
---someFunc = do
---  putStrLn $ show (buildBoard)
---  putStrLn $ show (stepBoard buildBoard)
---  putStrLn $ show (stepBoard . stepBoard $ buildBoard)

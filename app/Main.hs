@@ -9,7 +9,7 @@ import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
 import Debug.Trace
 
 data State = State
-  { board :: IORef Board
+  { board :: IORef Board'
   , lastUpdate :: IORef UTCTime
   }
 
@@ -50,11 +50,11 @@ display state = do
   let vertex3f = vertex :: Vertex3 GLfloat -> IO ()
 
   b <- get $ board state
-  let t = clock b
-  let ps = pieces b
-  let delta = sinceLastUpdate b
+  let t = _clock b
+  let ps = _map b
+  let delta = _sinceLastUpdate b
 
-  forM_ ps $ \(pos, (o, o'), d) -> do
+  forM_ ps $ \(((pos, pos'), (o, o')), d) -> do
     case d of
       GrabberPiece Grabber { closed = isClosed } -> do
         preservingMatrix $ do
@@ -129,12 +129,12 @@ gameLoop state = do
   b <- get (board state)
 
   let d = (realToFrac $ diffUTCTime t' t) / stepTime
-  let b' = if d + (sinceLastUpdate b) >= 1 then
+  let b' = if d + (_sinceLastUpdate b) >= 1 then
              -- TODO: Some protection for falling behind maybe
              trace (show $ stepBoard b)
-             (stepBoard b) { sinceLastUpdate = (sinceLastUpdate b) - 1 }
+             (stepBoard b) { _sinceLastUpdate = (_sinceLastUpdate b) - 1 }
            else
-             b { sinceLastUpdate = (sinceLastUpdate b) + d }
+             b { _sinceLastUpdate = (_sinceLastUpdate b) + d }
 
   writeIORef (lastUpdate state) t'
   writeIORef (board state) b'
