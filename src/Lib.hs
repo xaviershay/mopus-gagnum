@@ -17,7 +17,7 @@ type Position = (Integer, Integer)
 type Rotation = Int -- (From, Target)
 nullRotation = 360
 
-data Trigger = TimeTrigger Integer deriving (Show, Eq)
+newtype Trigger = TimeTrigger Integer deriving (Show, Eq)
 
 data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show, Eq)
 
@@ -25,7 +25,7 @@ type Program = [(Trigger, [Action])]
 
 data Element = Fire | Water | Earth | Air deriving (Show, Eq)
 
-data Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
+newtype Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
 
 data Grabber = Grabber {
     _program :: Program
@@ -35,11 +35,11 @@ data Grabber = Grabber {
 makeLenses ''Grabber
 
 -- TODO: combine Reagent / Product definitions somehow?
-data Reagent = Reagent {
+newtype Reagent = Reagent {
   rlayout :: Lattice Element
 } deriving (Show, Eq)
 
-data Product = Product {
+newtype Product = Product {
   playout :: Lattice Element
 } deriving (Show, Eq)
 
@@ -100,7 +100,7 @@ rotateDegrees :: RadialDirection -> PiecePosition -> PiecePosition
 rotateDegrees direction ((_, p'), (_, o'))  = ((p', p'), (o', o''))
   where
     o'' = o' + toDegrees direction + 360 `mod` 360
-    toDegrees RRight = (-60)
+    toDegrees RRight = -60
     toDegrees RLeft = 60
 
 replaceGrabber :: (PiecePosition, Grabber) -> (PiecePosition, Grabber) -> EvalBoard ()
@@ -116,7 +116,7 @@ advanceClock = do
   g <- use grid
 
   -- TODO avoid unsafe maximum
-  let maxProgramLength = maximum $ (map extractProgramLength g)
+  let maxProgramLength = maximum $ map extractProgramLength g
 
   let t' = (t + 1) `mod` fromIntegral maxProgramLength
 
@@ -133,14 +133,14 @@ stepBoard :: Board -> Board
 stepBoard b = runIdentity $ execStateT (stepGrabbers >> advanceClock) b
 
 matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
-matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + (fromIntegral $ length as))
+matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + fromIntegral (length as))
 
 toRadians d = fromIntegral d * pi / 180
 
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
-  _grid = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { _program =
+  _grid = [placePiece (0, 0) nullRotation (GrabberPiece Grabber { _program =
     [ (TimeTrigger 0, [
       ClawClose
     , Rotate RRight
@@ -150,9 +150,9 @@ buildBoard = Board {
     , _closed = False
     , _contents = Nothing
     }),
-    placePiece (1, 0) nullRotation (ReagentPiece $ Reagent { rlayout =
+    placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),
-    placePiece (0, 1) nullRotation (ProductPiece $ Product { playout =
+    placePiece (0, 1) nullRotation (ProductPiece Product { playout =
       Lattice [((0, 0), Fire)]})
   ]
 }
