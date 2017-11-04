@@ -45,8 +45,6 @@ newtype Product = Product {
 
 data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show, Eq)
 
-type PlacedPiece = (Position, Rotation, Piece)
-
 type PiecePosition = ((Position, Position), (Rotation, Rotation))
 type GrabTarget = (Position, Position, Piece)
 
