@@ -43,7 +43,12 @@ newtype Product = Product {
   playout :: Lattice Element
 } deriving (Show, Eq)
 
-data Piece = GrabberPiece Grabber | ReagentPiece Reagent | ProductPiece Product deriving (Show, Eq)
+data Piece =
+    GrabberPiece Grabber
+  | ReagentPiece Reagent
+  | ProductPiece Product
+  | LatticePiece (Lattice Element)
+  deriving (Show, Eq)
 
 type PiecePosition = ((Position, Position), (Rotation, Rotation))
 type GrabTarget = (Position, Position, Piece)
@@ -58,6 +63,28 @@ makeLenses ''Board
 type EvalBoard a = StateT Board Identity a
 
 placePiece b o p = (((b, b), (o, o)), p)
+
+dropContents :: EvalBoard ()
+dropContents = do
+  g <- use grid
+
+  -- for each grabber with contents, move that lattice back on to the board
+
+  forM_ g f
+
+  where
+    f :: (PiecePosition, Piece) -> EvalBoard ()
+    f (pos, GrabberPiece grabber@Grabber { _contents = Just lattice }) = do
+      let pos' = clawLocation (pos, grabber)
+
+      addPiece pos' (LatticePiece lattice)
+      replaceGrabber (pos, grabber) (pos, grabber & contents .~ Nothing)
+
+    f _ = return ()
+
+-- TODO: Needs to account for rotation
+addPiece :: Position -> Piece -> EvalBoard ()
+addPiece pos piece = grid %= (:) (((pos, pos), (nullRotation, nullRotation)), piece)
 
 stepGrabbers :: EvalBoard ()
 stepGrabbers = do
@@ -77,6 +104,27 @@ stepGrabber x@(_, grabber) = do
     Nothing -> return ()
     Just (TimeTrigger t', as) -> applyAction' x (as !! fromIntegral (t - t'))
 
+currentPos :: PiecePosition -> Position
+currentPos ((_, x), _) = x
+
+currentRotation :: PiecePosition -> Rotation
+currentRotation (_, (_, x)) = x
+
+clawLocation :: (PiecePosition, Grabber) -> Position
+clawLocation (p, _) = pixelToHex $ hexToPixel (currentPos p)
+  & _1 %~ ((cos o' * sqrt 3) +)
+  & _2 %~ ((sin o' * sqrt 3) +)
+
+  where
+    o' :: Float
+    o' = toRadians $ currentRotation p
+
+pieceAt :: Position -> EvalBoard (Maybe (PiecePosition, Piece))
+pieceAt location = do
+  g <- use grid
+
+  return $ find (\(p, _) -> location == currentPos p) g
+
 applyAction' :: (PiecePosition, Grabber) -> Action -> EvalBoard ()
 applyAction' old@(pos, grabber) ClawClose = do
   let grabber' = grabber & closed .~ True
@@ -89,8 +137,19 @@ applyAction' old@(pos, grabber) ClawOpen = do
   replaceGrabber old (stayStill pos, grabber')
 
 applyAction' old@(pos, grabber) (Rotate direction) = do
+  -- Need to pick up the lattice only when moving. Multiple claws are allowed
+  -- to grab the same piece if it is static!
+  -- TODO: Needs to account for a) where lattice is being picked up, b)
+  -- rotation of lattice.
+  lattice <- pieceAt (clawLocation old)
   let pos' = rotateDegrees direction pos
-  replaceGrabber old (pos', grabber)
+
+  case (grabber ^. closed, lattice) of
+    (True, Just piece@(_, LatticePiece xs)) -> do
+      removePiece piece
+      replaceGrabber old (pos', grabber & contents .~ Just xs)
+    _ ->
+      replaceGrabber old (pos', grabber)
 
 stayStill ((_, p'), (_, o')) = ((p', p'), (o', o'))
 
@@ -107,6 +166,9 @@ replaceGrabber (op, og) (np, ng) = do
   let new' = (np, GrabberPiece ng)
 
   grid . traverse %= (\x -> if x == old' then new' else x)
+
+removePiece :: (PiecePosition, Piece) -> EvalBoard ()
+removePiece p = grid %= filter (p /=)
 
 advanceClock :: EvalBoard ()
 advanceClock = do
@@ -128,7 +190,7 @@ advanceClock = do
     extractProgramLength _ = 0
 
 stepBoard :: Board -> Board
-stepBoard b = runIdentity $ execStateT (stepGrabbers >> advanceClock) b
+stepBoard b = runIdentity $ execStateT (dropContents >> stepGrabbers >> advanceClock) b
 
 matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
 matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + fromIntegral (length as))
@@ -138,19 +200,21 @@ toRadians d = fromIntegral d * pi / 180
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
-  _grid = [placePiece (0, 0) nullRotation (GrabberPiece Grabber { _program =
-    [ (TimeTrigger 0, [
-      ClawClose
-    , Rotate RRight
-    , ClawOpen
-    , Rotate RLeft
-    ])]
-    , _closed = False
-    , _contents = Nothing
-    }),
-    placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
-      Lattice [((0, 0), Fire)]}),
-    placePiece (0, 1) nullRotation (ProductPiece Product { playout =
+  _grid = [
+      placePiece (0, 0) nullRotation (GrabberPiece Grabber { _program =
+          [ (TimeTrigger 0, [
+            ClawClose
+          , Rotate RRight
+          , ClawOpen
+          , Rotate RLeft
+          ])]
+        , _closed = False
+        , _contents = Nothing
+      })
+    , placePiece (1, 0) nullRotation (LatticePiece (Lattice [((0, 0), Fire)]))
+    --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
+    --  Lattice [((0, 0), Fire)]})
+    , placePiece (0, 1) nullRotation (ProductPiece Product { playout =
       Lattice [((0, 0), Fire)]})
   ]
 }

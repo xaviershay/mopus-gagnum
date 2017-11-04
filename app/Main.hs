@@ -63,6 +63,7 @@ display state = do
       GrabberPiece grabber -> do
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
+          color (Color3 1 1 (1 :: GLfloat))
           translate $ Vector3 x y 0
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
@@ -80,7 +81,39 @@ display state = do
           when (grabber ^. closed) (color (Color3 0.0 0.7 (0.0 :: GLfloat)))
 
           renderPrimitive LineLoop hexVertices
+
+        case grabber ^. contents of
+          Nothing -> return ()
+          Just (Lattice xs) -> preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
+
+            translate $ Vector3 x y 0
+            rotate o'' $ Vector3 (0 :: Double) 0 1
+            translate $ Vector3 (sqrt 3 :: Float) 0 0
+
+            forM_ xs $ \(lpos, element) ->
+              preservingMatrix $ do
+                let (x, y) = hexToPixel lpos
+                translate $ Vector3 x y 0
+                rotate 90 $ Vector3 (0 :: Float) 0 1
+                scale 0.90 0.90 (1.0 :: Float)
+                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                renderPrimitive Polygon hexVertices
+
       ReagentPiece Reagent { rlayout = Lattice xs } ->
+        preservingMatrix $ do
+          let (x, y) = hexToPixel pos
+          translate $ Vector3 x y 0
+          forM_ xs $ \(lpos, element) ->
+            preservingMatrix $ do
+              let (x, y) = hexToPixel lpos
+              translate $ Vector3 x y 0
+              rotate 90 $ Vector3 (0 :: Float) 0 1
+              scale 0.90 0.90 (1.0 :: Float)
+              color (Color3 0.7 0.0 (0.0 :: GLfloat))
+              renderPrimitive Polygon hexVertices
+      LatticePiece (Lattice xs) ->
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
           translate $ Vector3 x y 0
