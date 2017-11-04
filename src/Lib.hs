@@ -8,7 +8,7 @@ import Debug.Trace
 import Control.Monad.State
 import Control.Monad.Identity
 
-type EvalBoard a = StateT Board' Identity a
+type EvalBoard a = StateT Board Identity a
 
 data RadialDirection = RRight | RLeft deriving (Show, Eq)
 
@@ -48,7 +48,7 @@ type PlacedPiece = (Position, Rotation, Piece)
 type PiecePosition = ((Position, Position), (Rotation, Rotation))
 type GrabTarget = (Position, Position, Piece)
 
-data Board' = Board' {
+data Board = Board {
     _clock :: Integer
   , _sinceLastUpdate :: Double
   , _map :: [(PiecePosition, Piece)]
@@ -123,7 +123,7 @@ advanceClock = do
       maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
     extractProgramLength _ = 0
 
-stepBoard :: Board' -> Board'
+stepBoard :: Board -> Board
 stepBoard b = runIdentity $ execStateT (stepGrabbers >> advanceClock) b
 
 matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
@@ -131,7 +131,7 @@ matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + (fromIntegral $ l
 
 toRadians d = fromIntegral d * pi / 180
 
-buildBoard = Board' {
+buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
   _map = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =

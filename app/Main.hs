@@ -10,7 +10,7 @@ import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
 import Debug.Trace
 
 data State = State
-  { board :: IORef Board'
+  { board :: IORef Board
   , lastUpdate :: IORef UTCTime
   }
 
