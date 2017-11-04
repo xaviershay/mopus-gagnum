@@ -1,4 +1,4 @@
-Sunday 22nd Oct 2017
+## Sunday 22nd Oct 2017
 
 9:36 Found Math.Geometry.Grid, appears to work fine for unbounded hex grids.
 
@@ -14,3 +14,14 @@ If you do it instantaneous, two atoms could switch places. But can't just check 
 1:30 got a game loop with timer going. GLUT probably won't scale long term but gets us going for now.
 
 2:30 rendering basic shapes for grabbers, reagents and products
+
+## Saturday 4th Nov 2017
+
+Grabbers can pick single element lattices up and move them now.
+
+Next steps
+
+* Products consume lattices when covered
+* Reagents produce lattices if not blocked
+* Two grabbers can't move the same lattice
+* Multi-element lattices (with rotation, and grabbing at different spots)
