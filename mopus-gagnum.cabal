@@ -31,6 +31,7 @@ executable mopus-gagnum-exe
   build-depends:       base
                      , mopus-gagnum
                      , grid
+                     , lens
                      , GLUT
                      , time
   default-language:    Haskell2010

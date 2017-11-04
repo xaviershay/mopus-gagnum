@@ -11,8 +11,6 @@ import Control.Monad.State
 import Control.Monad.Identity
 import Control.Lens hiding (element)
 
-type EvalBoard a = StateT Board Identity a
-
 data RadialDirection = RRight | RLeft deriving (Show, Eq)
 
 type Position = (Integer, Integer)
@@ -25,15 +23,16 @@ data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show, Eq)
 
 type Program = [(Trigger, [Action])]
 
-data Grabber = Grabber {
-    program :: Program
-  , closed :: Bool
-  , contents :: Maybe (Lattice Element)
-} deriving (Show, Eq)
-
 data Element = Fire | Water | Earth | Air deriving (Show, Eq)
 
 data Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
+
+data Grabber = Grabber {
+    _program :: Program
+  , _closed :: Bool
+  , _contents :: Maybe (Lattice Element)
+} deriving (Show, Eq)
+makeLenses ''Grabber
 
 -- TODO: combine Reagent / Product definitions somehow?
 data Reagent = Reagent {
@@ -58,13 +57,15 @@ data Board = Board {
 } deriving (Show)
 makeLenses ''Board
 
+type EvalBoard a = StateT Board Identity a
+
 placePiece b o p = (((b, b), (o, o)), p)
 
 stepGrabbers :: EvalBoard ()
 stepGrabbers = do
-  brd <- get
+  g <- use grid
 
-  forM_ (mapMaybe f $ view grid brd) stepGrabber
+  forM_ (mapMaybe f g) stepGrabber
 
   where
     f (pos, GrabberPiece grabber) = Just (pos, grabber)
@@ -72,21 +73,20 @@ stepGrabbers = do
 
 stepGrabber :: (PiecePosition, Grabber) -> EvalBoard ()
 stepGrabber x@(_, grabber) = do
-  brd <- get
-  let t = view clock brd
+  t <- use clock
 
-  case find (matchTimeTrigger t) (program grabber) of
+  case find (matchTimeTrigger t) (grabber ^. program) of
     Nothing -> return ()
     Just (TimeTrigger t', as) -> applyAction' x (as !! fromIntegral (t - t'))
 
 applyAction' :: (PiecePosition, Grabber) -> Action -> EvalBoard ()
 applyAction' old@(pos, grabber) ClawClose = do
-  let grabber' = grabber { closed = True }
+  let grabber' = grabber & closed .~ True
   
   replaceGrabber old (stayStill pos, grabber')
 
 applyAction' old@(pos, grabber) ClawOpen = do
-  let grabber' = grabber { closed = False }
+  let grabber' = grabber & closed .~ False
   
   replaceGrabber old (stayStill pos, grabber')
 
@@ -112,18 +112,21 @@ replaceGrabber (op, og) (np, ng) = do
 
 advanceClock :: EvalBoard ()
 advanceClock = do
-  brd <- get
-  
-  let maxProgramLength = maximum $ (map extractProgramLength (view grid brd)) -- TODO avoid unsafe maximum
+  t <- use clock
+  g <- use grid
 
-  let t = view clock brd
+  -- TODO avoid unsafe maximum
+  let maxProgramLength = maximum $ (map extractProgramLength g)
+
   let t' = (t + 1) `mod` fromIntegral maxProgramLength
 
   clock .= t'
 
   where
-    extractProgramLength (_, GrabberPiece Grabber { program = prg }) =
-      maximum $ map (\(TimeTrigger t, as) -> t + fromIntegral (length as)) prg
+    extractProgramLength (_, GrabberPiece grabber) =
+      maximum $
+        map (\(TimeTrigger t, as) -> t + fromIntegral (length as))
+        (grabber ^. program)
     extractProgramLength _ = 0
 
 stepBoard :: Board -> Board
@@ -137,15 +140,15 @@ toRadians d = fromIntegral d * pi / 180
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
-  _grid = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
+  _grid = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { _program =
     [ (TimeTrigger 0, [
       ClawClose
     , Rotate RRight
     , ClawOpen
     , Rotate RLeft
     ])]
-    , closed = False
-    , contents = Nothing
+    , _closed = False
+    , _contents = Nothing
     }),
     placePiece (1, 0) nullRotation (ReagentPiece $ Reagent { rlayout =
       Lattice [((0, 0), Fire)]}),

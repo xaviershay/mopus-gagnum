@@ -5,6 +5,7 @@ import Hex
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
 import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
+import Control.Lens hiding (element)
 import Control.Monad (forM_)
 import System.Exit ( exitFailure, exitWith, ExitCode(ExitSuccess) )
 import Debug.Trace
@@ -57,7 +58,7 @@ display state = do
 
   forM_ ps $ \(((pos, pos'), (o, o')), d) -> do
     case d of
-      GrabberPiece Grabber { closed = isClosed } -> do
+      GrabberPiece grabber -> do
         preservingMatrix $ do
           let (x, y) = hexToPixel pos
           translate $ Vector3 x y 0
@@ -74,7 +75,7 @@ display state = do
           rotate 90 $ Vector3 (0 :: Float) 0 1
           scale 0.95 0.95 (1.0 :: Float)
 
-          if isClosed then
+          if grabber ^. closed then
             color (Color3 0.0 0.7 (0.0 :: GLfloat))
           else
             return ()
