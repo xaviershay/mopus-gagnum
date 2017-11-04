@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Lib where
 
 import Hex
@@ -7,6 +9,7 @@ import Data.Maybe (mapMaybe)
 import Debug.Trace
 import Control.Monad.State
 import Control.Monad.Identity
+import Control.Lens hiding (element)
 
 type EvalBoard a = StateT Board Identity a
 
@@ -51,8 +54,9 @@ type GrabTarget = (Position, Position, Piece)
 data Board = Board {
     _clock :: Integer
   , _sinceLastUpdate :: Double
-  , _map :: [(PiecePosition, Piece)]
+  , _grid :: [(PiecePosition, Piece)]
 } deriving (Show)
+makeLenses ''Board
 
 placePiece b o p = (((b, b), (o, o)), p)
 
@@ -60,7 +64,7 @@ stepGrabbers :: EvalBoard ()
 stepGrabbers = do
   brd <- get
 
-  forM_ (mapMaybe f $ _map brd) stepGrabber
+  forM_ (mapMaybe f $ view grid brd) stepGrabber
 
   where
     f (pos, GrabberPiece grabber) = Just (pos, grabber)
@@ -69,7 +73,7 @@ stepGrabbers = do
 stepGrabber :: (PiecePosition, Grabber) -> EvalBoard ()
 stepGrabber x@(_, grabber) = do
   brd <- get
-  let t = _clock brd
+  let t = view clock brd
 
   case find (matchTimeTrigger t) (program grabber) of
     Nothing -> return ()
@@ -101,22 +105,21 @@ rotateDegrees direction ((_, p'), (_, o'))  = ((p', p'), (o', o''))
 
 replaceGrabber :: (PiecePosition, Grabber) -> (PiecePosition, Grabber) -> EvalBoard ()
 replaceGrabber (op, og) (np, ng) = do
-  brd <- get
   let old' = (op, GrabberPiece og)
   let new' = (np, GrabberPiece ng)
 
-  put $ brd { _map = map (\x -> if x == old' then new' else x) (_map brd) }
+  grid . traverse %= (\x -> if x == old' then new' else x)
 
 advanceClock :: EvalBoard ()
 advanceClock = do
   brd <- get
   
-  let maxProgramLength = maximum $ (map extractProgramLength (_map brd)) -- TODO avoid unsafe maximum
+  let maxProgramLength = maximum $ (map extractProgramLength (view grid brd)) -- TODO avoid unsafe maximum
 
-  let t = _clock brd
+  let t = view clock brd
   let t' = (t + 1) `mod` fromIntegral maxProgramLength
 
-  put $ brd { _clock = t' }
+  clock .= t'
 
   where
     extractProgramLength (_, GrabberPiece Grabber { program = prg }) =
@@ -134,7 +137,7 @@ toRadians d = fromIntegral d * pi / 180
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
-  _map = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
+  _grid = [placePiece (0, 0) nullRotation (GrabberPiece $ Grabber { program =
     [ (TimeTrigger 0, [
       ClawClose
     , Rotate RRight

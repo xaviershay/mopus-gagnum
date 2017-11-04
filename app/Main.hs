@@ -52,7 +52,7 @@ display state = do
 
   b <- get $ board state
   let t = _clock b
-  let ps = _map b
+  let ps = _grid b
   let delta = _sinceLastUpdate b
 
   forM_ ps $ \(((pos, pos'), (o, o')), d) -> do
