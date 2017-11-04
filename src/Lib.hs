@@ -196,25 +196,36 @@ matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
 matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + fromIntegral (length as))
 
 toRadians d = fromIntegral d * pi / 180
+moveRightProgram = [ (TimeTrigger 0,
+                     [ ClawClose
+                     , Rotate RRight
+                     , ClawOpen
+                     , Rotate RLeft
+                     ])]
 
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
   _grid = [
-      placePiece (0, 0) nullRotation (GrabberPiece Grabber { _program =
-          [ (TimeTrigger 0, [
-            ClawClose
-          , Rotate RRight
-          , ClawOpen
-          , Rotate RLeft
-          ])]
+      placePiece (0, 0) nullRotation (GrabberPiece Grabber {
+          _program = moveRightProgram
+        , _closed = False
+        , _contents = Nothing
+      })
+    , placePiece (2, 0) 240 (GrabberPiece Grabber {
+          _program = moveRightProgram
+        , _closed = False
+        , _contents = Nothing
+      })
+    , placePiece (0, 2) 120 (GrabberPiece Grabber {
+          _program = moveRightProgram
         , _closed = False
         , _contents = Nothing
       })
     , placePiece (1, 0) nullRotation (LatticePiece (Lattice [((0, 0), Fire)]))
     --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
     --  Lattice [((0, 0), Fire)]})
-    , placePiece (0, 1) nullRotation (ProductPiece Product { playout =
-      Lattice [((0, 0), Fire)]})
+    --, placePiece (0, 1) nullRotation (ProductPiece Product { playout =
+    --  Lattice [((0, 0), Fire)]})
   ]
 }
