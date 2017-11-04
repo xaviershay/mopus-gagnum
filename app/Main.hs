@@ -1,6 +1,6 @@
 module Main where
 
-import Lib
+import Lib hiding (Position)
 import Hex
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
@@ -13,18 +13,21 @@ import Debug.Trace
 data State = State
   { board :: IORef Board
   , lastUpdate :: IORef UTCTime
-  , pan :: IORef (Float, Float)
+  , pan :: IORef (Double, Double)
+  , lastPanPos :: IORef (Maybe Position)
   }
 
 mkState :: IO State
 mkState = do
   t <- newIORef =<< getCurrentTime
   b <- newIORef buildBoard
-  p <- newIORef (-1, 1)
+  p <- newIORef (0, 0)
+  lpp <- newIORef Nothing
   return State
     { board = b
     , lastUpdate = t
     , pan = p
+    , lastPanPos = lpp
     }
 
 hexPoly :: [(Float, Float)]
@@ -187,6 +190,33 @@ keyboard :: KeyboardMouseCallback
 keyboard (Char '\27') Down _ _ = exitSuccess
 keyboard _ _ _ _ = return ()
 
+diffPos :: Position -> Position -> Position
+diffPos (Position x1 y1) (Position x2 y2) = Position (x1 - x2) (y1 - y2)
+
+addPan :: Double -> (Double, Double) -> Position -> (Double, Double)
+addPan scalingFactor (x1, y1) (Position x2 y2) =
+  (x1 + fromIntegral x2 / scalingFactor, y1 - fromIntegral y2 / scalingFactor)
+
+mouseDrag :: State -> MotionCallback
+mouseDrag state pos = do
+  lpp <- get (lastPanPos state)
+  case lpp of
+    Nothing -> return ()
+    Just p -> do
+      let relativePos = diffPos pos p
+
+      pn <- get (pan state)
+      -- TODO: Handle non-square windows
+      Size sx _ <- get windowSize
+      let scalingFactor = fromIntegral sx / (gridSize * 2)
+      let pn' = addPan scalingFactor pn relativePos
+      writeIORef (pan state) $ pn'
+      writeIORef (lastPanPos state) $ Just pos
+
+mouse :: State -> MouseCallback
+mouse state RightButton Down pos = writeIORef (lastPanPos state) (Just pos)
+mouse state RightButton Up pos = writeIORef (lastPanPos state) Nothing
+
 main :: IO ()
 main = do
   _ <- getArgsAndInitialize
@@ -198,5 +228,7 @@ main = do
   myInit
   displayCallback $= display state
   keyboardMouseCallback $= Just keyboard
+  motionCallback $= Just (mouseDrag state)
+  mouseCallback $= Just (mouse state)
   idleCallback $= (Just $ gameLoop state)
   mainLoop
