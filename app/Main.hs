@@ -13,15 +13,18 @@ import Debug.Trace
 data State = State
   { board :: IORef Board
   , lastUpdate :: IORef UTCTime
+  , pan :: IORef (Float, Float)
   }
 
 mkState :: IO State
 mkState = do
   t <- newIORef =<< getCurrentTime
   b <- newIORef buildBoard
+  p <- newIORef (-1, 1)
   return State
     { board = b
     , lastUpdate = t
+    , pan = p
     }
 
 hexPoly :: [(Float, Float)]
@@ -49,49 +52,63 @@ display :: State -> DisplayCallback
 display state = do
   clear [ColorBuffer, DepthBuffer]
 
-  -- draw white polygon (rectangle) with corners at
-  -- (0.25, 0.25, 0.0) and (0.75, 0.75, 0.0)
-  color (Color3 1.0 1.0 (1.0 :: GLfloat))
-
   b <- get $ board state
+  p <- get $ pan state
+
   let t = _clock b
   let ps = _grid b
   let delta = _sinceLastUpdate b
 
-  forM_ ps $ \(((pos, pos'), (o, o')), d) ->
-    case d of
-      GrabberPiece grabber -> do
-        preservingMatrix $ do
-          let (x, y) = hexToPixel pos
-          color (Color3 1 1 (1 :: GLfloat))
-          translate $ Vector3 x y 0
-          rotate 90 $ Vector3 (0 :: Float) 0 1
-          scale 0.95 0.95 (1.0 :: Float)
-          renderPrimitive Polygon hexVertices
+  preservingMatrix $ do
+    translate $ Vector3 (fst p) (snd p) 0
 
-        preservingMatrix $ do
-          let (x, y) = hexToPixel pos
-          let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
-          translate $ Vector3 x y 0.1
-          rotate o'' $ Vector3 (0 :: Double) 0 1
-          translate $ Vector3 (sqrt 3 :: Float) 0 0
-          rotate 90 $ Vector3 (0 :: Float) 0 1
-          scale 0.95 0.95 (1.0 :: Float)
+    forM_ ps $ \(((pos, pos'), (o, o')), d) ->
+      case d of
+        GrabberPiece grabber -> do
+          preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            color (Color3 1 1 (1 :: GLfloat))
+            translate $ Vector3 x y 0
+            rotate 90 $ Vector3 (0 :: Float) 0 1
+            scale 0.95 0.95 (1.0 :: Float)
+            renderPrimitive Polygon hexVertices
 
-          when (grabber ^. closed) (color (Color3 0.0 0.7 (0.0 :: GLfloat)))
-
-          renderPrimitive LineLoop hexVertices
-
-        case grabber ^. contents of
-          Nothing -> return ()
-          Just (Lattice xs) -> preservingMatrix $ do
+          preservingMatrix $ do
             let (x, y) = hexToPixel pos
             let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
-
-            translate $ Vector3 x y 0
+            translate $ Vector3 x y 0.1
             rotate o'' $ Vector3 (0 :: Double) 0 1
             translate $ Vector3 (sqrt 3 :: Float) 0 0
+            rotate 90 $ Vector3 (0 :: Float) 0 1
+            scale 0.95 0.95 (1.0 :: Float)
 
+            when (grabber ^. closed) (color (Color3 0.0 0.7 (0.0 :: GLfloat)))
+
+            renderPrimitive LineLoop hexVertices
+
+          case grabber ^. contents of
+            Nothing -> return ()
+            Just (Lattice xs) -> preservingMatrix $ do
+              let (x, y) = hexToPixel pos
+              let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
+
+              translate $ Vector3 x y 0
+              rotate o'' $ Vector3 (0 :: Double) 0 1
+              translate $ Vector3 (sqrt 3 :: Float) 0 0
+
+              forM_ xs $ \(lpos, element) ->
+                preservingMatrix $ do
+                  let (x, y) = hexToPixel lpos
+                  translate $ Vector3 x y 0
+                  rotate 90 $ Vector3 (0 :: Float) 0 1
+                  scale 0.90 0.90 (1.0 :: Float)
+                  color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                  renderPrimitive Polygon hexVertices
+
+        ReagentPiece Reagent { rlayout = Lattice xs } ->
+          preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            translate $ Vector3 x y 0
             forM_ xs $ \(lpos, element) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
@@ -100,43 +117,30 @@ display state = do
                 scale 0.90 0.90 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
                 renderPrimitive Polygon hexVertices
-
-      ReagentPiece Reagent { rlayout = Lattice xs } ->
-        preservingMatrix $ do
-          let (x, y) = hexToPixel pos
-          translate $ Vector3 x y 0
-          forM_ xs $ \(lpos, element) ->
-            preservingMatrix $ do
-              let (x, y) = hexToPixel lpos
-              translate $ Vector3 x y 0
-              rotate 90 $ Vector3 (0 :: Float) 0 1
-              scale 0.90 0.90 (1.0 :: Float)
-              color (Color3 0.7 0.0 (0.0 :: GLfloat))
-              renderPrimitive Polygon hexVertices
-      LatticePiece (Lattice xs) ->
-        preservingMatrix $ do
-          let (x, y) = hexToPixel pos
-          translate $ Vector3 x y 0
-          forM_ xs $ \(lpos, element) ->
-            preservingMatrix $ do
-              let (x, y) = hexToPixel lpos
-              translate $ Vector3 x y 0
-              rotate 90 $ Vector3 (0 :: Float) 0 1
-              scale 0.90 0.90 (1.0 :: Float)
-              color (Color3 0.7 0.0 (0.0 :: GLfloat))
-              renderPrimitive Polygon hexVertices
-      ProductPiece Product { playout = Lattice xs } ->
-        preservingMatrix $ do
-          let (x, y) = hexToPixel pos
-          translate $ Vector3 x y 0
-          forM_ xs $ \(lpos, element) ->
-            preservingMatrix $ do
-              let (x, y) = hexToPixel lpos
-              translate $ Vector3 x y 0
-              rotate 90 $ Vector3 (0 :: Float) 0 1
-              scale 0.90 0.90 (1.0 :: Float)
-              color (Color3 0.7 0.0 (0.0 :: GLfloat))
-              renderPrimitive LineLoop hexVertices
+        LatticePiece (Lattice xs) ->
+          preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            translate $ Vector3 x y 0
+            forM_ xs $ \(lpos, element) ->
+              preservingMatrix $ do
+                let (x, y) = hexToPixel lpos
+                translate $ Vector3 x y 0
+                rotate 90 $ Vector3 (0 :: Float) 0 1
+                scale 0.90 0.90 (1.0 :: Float)
+                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                renderPrimitive Polygon hexVertices
+        ProductPiece Product { playout = Lattice xs } ->
+          preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            translate $ Vector3 x y 0
+            forM_ xs $ \(lpos, element) ->
+              preservingMatrix $ do
+                let (x, y) = hexToPixel lpos
+                translate $ Vector3 x y 0
+                rotate 90 $ Vector3 (0 :: Float) 0 1
+                scale 0.90 0.90 (1.0 :: Float)
+                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                renderPrimitive LineLoop hexVertices
 
   color (Color3 1.0 1.0 (1.0 :: GLfloat))
   currentRasterPosition $= Vertex4 (-4.7) (-4.7) 0 1
