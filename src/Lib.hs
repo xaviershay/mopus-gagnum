@@ -1,21 +1,24 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Lib where
 
 import Hex
 
 import Data.List (find)
-import Data.Maybe (mapMaybe)
+import Data.Maybe (mapMaybe, fromJust)
+import Data.Fixed (mod')
 import Debug.Trace
 import Control.Monad.State
+import Control.Monad.Writer hiding (Product)
 import Control.Monad.Identity
 import Control.Lens hiding (element)
 
 data RadialDirection = RRight | RLeft deriving (Show, Eq)
 
 type Position = (Integer, Integer)
-type Rotation = Int -- (From, Target)
-nullRotation = 360
+
+newtype Radians = Radians Double deriving (Show, Eq, Num, Fractional, Floating, Real, Ord)
 
 newtype Trigger = TimeTrigger Integer deriving (Show, Eq)
 
@@ -50,41 +53,81 @@ data Piece =
   | LatticePiece (Lattice Element)
   deriving (Show, Eq)
 
-type PiecePosition = ((Position, Position), (Rotation, Rotation))
+data Placement = Placement Position Radians deriving (Show, Eq)
 type GrabTarget = (Position, Position, Piece)
+
+type Key = Placement
+
+data Transition =
+    ToRotation Radians
+  | ToClaw Bool
+  deriving (Show)
+
+-- TODO: Switch to Seq for better concatenation performance
+type TransitionList = [(Key, Transition)]
+type Delta = Double
 
 data Board = Board {
     _clock :: Integer
-  , _sinceLastUpdate :: Double
-  , _grid :: [(PiecePosition, Piece)]
+  , _sinceLastUpdate :: Delta
+  , _grid :: [(Placement, Piece)]
+  , _transitions :: TransitionList
 } deriving (Show)
 makeLenses ''Board
 
-type EvalBoard a = StateT Board Identity a
+type EvalBoard a = WriterT TransitionList (StateT Board Identity) a
 
-placePiece b o p = (((b, b), (o, o)), p)
+placePiece :: Position -> Radians -> Piece -> (Placement, Piece)
+placePiece b o p = (Placement b o, p)
+
+applyTransitions :: TransitionList -> Delta -> (Placement, Piece) -> (Placement, Piece)
+applyTransitions ts d x@(key@(Placement pos r), piece) =
+  case find (\(k, _) -> k == key) ts of
+    Just (k, transition) -> applyTransition transition d x
+    Nothing              -> x
+
+applyTransition :: Transition -> Delta -> (Placement, Piece) -> (Placement, Piece)
+applyTransition (ToClaw c) _ (placement, GrabberPiece grabber) =
+  (placement, GrabberPiece $ grabber & closed .~ c)
+applyTransition (ToRotation r') delta (Placement p r, piece) =
+  (Placement p $ r + (r' - r) * (Radians $ realToFrac delta), piece)
 
 dropContents :: EvalBoard ()
 dropContents = do
+  ts <- use transitions
+
+  f ts
+
   g <- use grid
+  forM_ g emptyGrabbers
 
-  -- for each grabber with contents, move that lattice back on to the board
-
-  forM_ g f
+  transitions .= mempty
 
   where
-    f :: (PiecePosition, Piece) -> EvalBoard ()
-    f (pos, GrabberPiece grabber@Grabber { _contents = Just lattice }) = do
-      let pos' = clawLocation (pos, grabber)
+    f :: TransitionList -> EvalBoard ()
+    f [] = return ()
+    f ((k, t):ts) = do
+      oldPiece <- pieceAt k -- TODO: Avoid unsafe fromJust
+      let newPiece = applyTransition t 1.0 (k, fromJust oldPiece)
 
-      addPiece pos' (LatticePiece lattice)
-      replaceGrabber (pos, grabber) (pos, grabber & contents .~ Nothing)
+      removePiece k
+      addPiece newPiece
 
-    f _ = return ()
+      f ts
 
--- TODO: Needs to account for rotation
-addPiece :: Position -> Piece -> EvalBoard ()
-addPiece pos piece = grid %= (:) (((pos, pos), (nullRotation, nullRotation)), piece)
+    emptyGrabbers :: (Placement, Piece) -> EvalBoard ()
+    emptyGrabbers (pos, GrabberPiece grabber) =
+      case grabber ^. contents of
+        Nothing -> return ()
+        Just lattice -> do
+          let clawPos = clawLocation (pos, grabber)
+
+          addPiece (clawPos, LatticePiece lattice)
+          updateGrabber pos (grabber & contents .~ Nothing)
+    emptyGrabbers _ = return ()
+
+addPiece :: (Placement, Piece) -> EvalBoard ()
+addPiece x = grid %= (:) x
 
 stepGrabbers :: EvalBoard ()
 stepGrabbers = do
@@ -96,7 +139,7 @@ stepGrabbers = do
     f (pos, GrabberPiece grabber) = Just (pos, grabber)
     f _                           = Nothing
 
-stepGrabber :: (PiecePosition, Grabber) -> EvalBoard ()
+stepGrabber :: (Placement, Grabber) -> EvalBoard ()
 stepGrabber x@(_, grabber) = do
   t <- use clock
 
@@ -104,71 +147,66 @@ stepGrabber x@(_, grabber) = do
     Nothing -> return ()
     Just (TimeTrigger t', as) -> applyAction' x (as !! fromIntegral (t - t'))
 
-currentPos :: PiecePosition -> Position
-currentPos ((_, x), _) = x
+currentPos :: Placement -> Position
+currentPos (Placement x _) = x
 
-currentRotation :: PiecePosition -> Rotation
-currentRotation (_, (_, x)) = x
+currentRotation :: Placement -> Radians
+currentRotation (Placement _ x) = x
 
-clawLocation :: (PiecePosition, Grabber) -> Position
-clawLocation (p, _) = pixelToHex $ hexToPixel (currentPos p)
-  & _1 %~ ((cos o' * sqrt 3) +)
-  & _2 %~ ((sin o' * sqrt 3) +)
+clawLocation :: (Placement, Grabber) -> Placement
+clawLocation (p, _) =
+  let pos = pixelToHex $ hexToPixel (currentPos p)
+              & _1 %~ ((cos o * sqrt 3) +)
+              & _2 %~ ((sin o * sqrt 3) +) in
+
+  Placement pos (Radians 0) -- TODO: Allow for claw rotation
 
   where
-    o' :: Float
-    o' = toRadians $ currentRotation p
+    (Radians o) = currentRotation p
 
-pieceAt :: Position -> EvalBoard (Maybe (PiecePosition, Piece))
+pieceAt :: Placement -> EvalBoard (Maybe Piece)
 pieceAt location = do
   g <- use grid
 
-  return $ find (\(p, _) -> location == currentPos p) g
+  return $ snd <$> find (\(p, _) -> location == p) g
 
-applyAction' :: (PiecePosition, Grabber) -> Action -> EvalBoard ()
-applyAction' old@(pos, grabber) ClawClose = do
-  let grabber' = grabber & closed .~ True
-
-  replaceGrabber old (stayStill pos, grabber')
-
-applyAction' old@(pos, grabber) ClawOpen = do
-  let grabber' = grabber & closed .~ False
-
-  replaceGrabber old (stayStill pos, grabber')
+applyAction' :: (Placement, Grabber) -> Action -> EvalBoard ()
+applyAction' (pos, _) ClawClose = addTransition pos (ToClaw True)
+applyAction' (pos, _) ClawOpen  = addTransition pos (ToClaw False)
 
 applyAction' old@(pos, grabber) (Rotate direction) = do
   -- Need to pick up the lattice only when moving. Multiple claws are allowed
   -- to grab the same piece if it is static!
   -- TODO: Needs to account for a) where lattice is being picked up, b)
   -- rotation of lattice.
-  lattice <- pieceAt (clawLocation old)
-  let pos' = rotateDegrees direction pos
+  let latticePos = clawLocation old
+  lattice <- pieceAt latticePos
+  let (Placement _ newRotation) = rotateDirection direction pos
 
   case (grabber ^. closed, lattice) of
-    (True, Just piece@(_, LatticePiece xs)) -> do
-      removePiece piece
-      replaceGrabber old (pos', grabber & contents .~ Just xs)
+    (True, Just (LatticePiece xs)) -> do
+      removePiece latticePos
+      updateGrabber pos (grabber & contents .~ Just xs)
+      addTransition pos (ToRotation newRotation)
     _ ->
-      replaceGrabber old (pos', grabber)
+      addTransition pos (ToRotation newRotation)
 
-stayStill ((_, p'), (_, o')) = ((p', p'), (o', o'))
+addTransition :: Placement -> Transition -> EvalBoard ()
+addTransition k t = tell [(k, t)]
 
-rotateDegrees :: RadialDirection -> PiecePosition -> PiecePosition
-rotateDegrees direction ((_, p'), (_, o'))  = ((p', p'), (o', o''))
+rotateDirection :: RadialDirection -> Placement -> Placement
+rotateDirection direction (Placement p o) = Placement p o'
   where
-    o'' = o' + toDegrees direction + 360 `mod` 360
-    toDegrees RRight = -60
-    toDegrees RLeft = 60
+    o' = o + f direction + (2 * pi) `mod'` (2 * pi)
+    f RRight = hexRotation (-1)
+    f RLeft  = hexRotation 1
 
-replaceGrabber :: (PiecePosition, Grabber) -> (PiecePosition, Grabber) -> EvalBoard ()
-replaceGrabber (op, og) (np, ng) = do
-  let old' = (op, GrabberPiece og)
-  let new' = (np, GrabberPiece ng)
+updateGrabber :: Key -> Grabber -> EvalBoard ()
+updateGrabber key new =
+  grid . traverse %= (\(k, old) -> (k, if k == key then GrabberPiece new else old))
 
-  grid . traverse %= (\x -> if x == old' then new' else x)
-
-removePiece :: (PiecePosition, Piece) -> EvalBoard ()
-removePiece p = grid %= filter (p /=)
+removePiece :: Key -> EvalBoard ()
+removePiece (Placement key _) = grid %= filter (\(Placement k _, _) -> k /= key)
 
 advanceClock :: EvalBoard ()
 advanceClock = do
@@ -190,7 +228,12 @@ advanceClock = do
     extractProgramLength _ = 0
 
 stepBoard :: Board -> Board
-stepBoard b = runIdentity $ execStateT (dropContents >> stepGrabbers >> advanceClock) b
+stepBoard b =
+  let t = execWriterT (dropContents >> stepGrabbers >> advanceClock) :: StateT Board Identity TransitionList in
+  let s = runStateT t b :: Identity (TransitionList, Board) in
+  let (ts, board) = runIdentity s in
+
+  board & transitions .~ ts
 
 matchTimeTrigger :: Integer -> (Trigger, [Action]) -> Bool
 matchTimeTrigger t (TimeTrigger t', as) = t' <= t && t < (t' + fromIntegral (length as))
@@ -203,26 +246,30 @@ moveRightProgram = [ (TimeTrigger 0,
                      , Rotate RLeft
                      ])]
 
+hexRotation :: Int -> Radians
+hexRotation x = Radians $ pi / 3 * fromIntegral x
+
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
+  _transitions = mempty,
   _grid = [
-      placePiece (0, 0) nullRotation (GrabberPiece Grabber {
+      placePiece (0, 0) (hexRotation 0) (GrabberPiece Grabber {
           _program = moveRightProgram
         , _closed = False
         , _contents = Nothing
       })
-    , placePiece (2, 0) 240 (GrabberPiece Grabber {
+    , placePiece (2, 0) (hexRotation 4) (GrabberPiece Grabber {
           _program = moveRightProgram
         , _closed = False
         , _contents = Nothing
       })
-    , placePiece (0, 2) 120 (GrabberPiece Grabber {
+    , placePiece (0, 2) (hexRotation 2) (GrabberPiece Grabber {
           _program = moveRightProgram
         , _closed = False
         , _contents = Nothing
       })
-    , placePiece (1, 0) nullRotation (LatticePiece (Lattice [((0, 0), Fire)]))
+    , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
     --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
     --  Lattice [((0, 0), Fire)]})
     --, placePiece (0, 1) nullRotation (ProductPiece Product { playout =

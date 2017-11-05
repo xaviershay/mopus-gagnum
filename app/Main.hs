@@ -2,6 +2,7 @@ module Main where
 
 import Lib hiding (Position)
 import Hex
+import Data.List (find)
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
 import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
@@ -59,28 +60,30 @@ display state = do
   p <- get $ pan state
 
   let t = _clock b
-  let ps = _grid b
+  let ts = _transitions b
   let delta = _sinceLastUpdate b
+  let ps = map (applyTransitions ts delta) (_grid b)
 
   preservingMatrix $ do
     translate $ Vector3 (fst p) (snd p) 0
 
-    forM_ ps $ \(((pos, pos'), (o, o')), d) ->
+    forM_ ps $ \(Placement pos (Radians o'), d) ->
+      let o = o' * (180 / pi) in
+
       case d of
         GrabberPiece grabber -> do
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
             color (Color3 1 1 (1 :: GLfloat))
-            translate $ Vector3 x y 0
+            translate $ Vector3 x y (0 :: Double)
             rotate 90 $ Vector3 (0 :: Float) 0 1
             scale 0.95 0.95 (1.0 :: Float)
             renderPrimitive Polygon hexVertices
 
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
-            let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
-            translate $ Vector3 x y 0.1
-            rotate o'' $ Vector3 (0 :: Double) 0 1
+            translate $ Vector3 x y (0.1 :: Double)
+            rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
             translate $ Vector3 (sqrt 3 :: Float) 0 0
             rotate 90 $ Vector3 (0 :: Float) 0 1
             scale 0.95 0.95 (1.0 :: Float)
@@ -93,16 +96,15 @@ display state = do
             Nothing -> return ()
             Just (Lattice xs) -> preservingMatrix $ do
               let (x, y) = hexToPixel pos
-              let o'' = fromIntegral o + (fromIntegral (o' - o) * delta)
 
-              translate $ Vector3 x y 0
-              rotate o'' $ Vector3 (0 :: Double) 0 1
+              translate $ Vector3 x y (0 :: Double)
+              rotate o $ Vector3 (0 :: Double) 0 1
               translate $ Vector3 (sqrt 3 :: Float) 0 0
 
               forM_ xs $ \(lpos, element) ->
                 preservingMatrix $ do
                   let (x, y) = hexToPixel lpos
-                  translate $ Vector3 x y 0
+                  translate $ Vector3 x y (0 :: Double)
                   rotate 90 $ Vector3 (0 :: Float) 0 1
                   scale 0.90 0.90 (1.0 :: Float)
                   color (Color3 0.7 0.0 (0.0 :: GLfloat))
@@ -111,11 +113,11 @@ display state = do
         ReagentPiece Reagent { rlayout = Lattice xs } ->
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
-            translate $ Vector3 x y 0
+            translate $ Vector3 x y (0 :: Double)
             forM_ xs $ \(lpos, element) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
-                translate $ Vector3 x y 0
+                translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
@@ -123,11 +125,11 @@ display state = do
         LatticePiece (Lattice xs) ->
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
-            translate $ Vector3 x y 0
+            translate $ Vector3 x y (0 :: Double)
             forM_ xs $ \(lpos, element) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
-                translate $ Vector3 x y 0
+                translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
@@ -135,11 +137,11 @@ display state = do
         ProductPiece Product { playout = Lattice xs } ->
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
-            translate $ Vector3 x y 0
+            translate $ Vector3 x y (0 :: Double)
             forM_ xs $ \(lpos, element) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
-                translate $ Vector3 x y 0
+                translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
@@ -173,7 +175,7 @@ gameLoop state = do
   let d = realToFrac (diffUTCTime t' t) / stepTime
   let b' = if d + (b ^. sinceLastUpdate) >= 1 then
              -- TODO: Some protection for falling behind maybe
-             trace (show $ stepBoard b)
+             trace ("\n\n=================\n" ++ (show $ stepBoard b))
              (stepBoard b) & sinceLastUpdate -~ 1
            else
              b & sinceLastUpdate +~ d
@@ -183,7 +185,7 @@ gameLoop state = do
 
   postRedisplay Nothing
 
-stepTime = 0.5 
+stepTime = 0.5
 stepMs = round $ stepTime * 1000
 
 keyboard :: KeyboardMouseCallback
