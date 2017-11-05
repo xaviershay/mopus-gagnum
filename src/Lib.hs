@@ -128,12 +128,12 @@ pieceAt location = do
 applyAction' :: (PiecePosition, Grabber) -> Action -> EvalBoard ()
 applyAction' old@(pos, grabber) ClawClose = do
   let grabber' = grabber & closed .~ True
-  
+
   replaceGrabber old (stayStill pos, grabber')
 
 applyAction' old@(pos, grabber) ClawOpen = do
   let grabber' = grabber & closed .~ False
-  
+
   replaceGrabber old (stayStill pos, grabber')
 
 applyAction' old@(pos, grabber) (Rotate direction) = do
