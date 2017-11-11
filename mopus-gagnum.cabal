@@ -18,6 +18,7 @@ library
   exposed-modules:     Lib, Hex
   build-depends:       base >= 4.7 && < 5
                      , grid
+                     , containers
                      , time
                      , transformers
                      , lens

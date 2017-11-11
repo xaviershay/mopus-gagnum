@@ -8,6 +8,7 @@ import Hex
 import Data.List (find)
 import Data.Maybe (mapMaybe, fromJust)
 import Data.Fixed (mod')
+import qualified Data.Map.Strict as M
 import Debug.Trace
 import Control.Monad.State
 import Control.Monad.Writer hiding (Product)
@@ -48,12 +49,18 @@ newtype Product = Product {
 
 data Piece =
     GrabberPiece Grabber
-  | ReagentPiece Reagent
-  | ProductPiece Product
   | LatticePiece (Lattice Element)
   deriving (Show, Eq)
 
+data GroundPiece =
+    Producer (Lattice Element)
+  | Consumer (Lattice Element)
+  --  ReagentPiece Reagent
+  -- | ProductPiece Product
+  deriving (Show, Eq)
+
 data Placement = Placement Position Radians deriving (Show, Eq)
+
 type GrabTarget = (Position, Position, Piece)
 
 type Key = Placement
@@ -71,6 +78,7 @@ data Board = Board {
     _clock :: Integer
   , _sinceLastUpdate :: Delta
   , _grid :: [(Placement, Piece)]
+  , _ground :: M.Map Position (Placement, GroundPiece)
   , _transitions :: TransitionList
 } deriving (Show)
 makeLenses ''Board
@@ -126,6 +134,41 @@ dropContents = do
           updateGrabber pos (grabber & contents .~ Nothing)
     emptyGrabbers _ = return ()
 
+extractLattices :: EvalBoard [(Placement, Lattice Element)]
+extractLattices = do
+  g <- use grid
+
+  return (mapMaybe f g)
+
+  where
+    f (p, LatticePiece l) = Just (p, l)
+    f _ = Nothing
+
+groundAt :: Placement -> EvalBoard (Maybe (Placement, GroundPiece))
+groundAt (Placement p _) = do
+  g <- use ground
+  return $ M.lookup p g
+
+consumeAndProduce :: EvalBoard ()
+consumeAndProduce = do
+  -- For each lattice on board
+  -- Find matching ground consumer
+  lattices <- extractLattices
+  forM_ lattices $ \(p1, l1) -> do
+    x <- groundAt p1
+
+    case x of
+      Just (p2, Consumer l2) -> if (p1, l1) == (p2, l2) then
+                                  removePiece p1
+                                else
+                                  return ()
+      _ -> return ()
+
+
+
+  -- TODO
+  -- For each ground producer
+  --   check that none of its lattice spots has something on the board
 addPiece :: (Placement, Piece) -> EvalBoard ()
 addPiece x = grid %= (:) x
 
@@ -229,7 +272,7 @@ advanceClock = do
 
 stepBoard :: Board -> Board
 stepBoard b =
-  let t = execWriterT (dropContents >> stepGrabbers >> advanceClock) :: StateT Board Identity TransitionList in
+  let t = execWriterT (dropContents >> consumeAndProduce >> stepGrabbers >> advanceClock) :: StateT Board Identity TransitionList in
   let s = runStateT t b :: Identity (TransitionList, Board) in
   let (ts, board) = runIdentity s in
 
@@ -249,10 +292,17 @@ moveRightProgram = [ (TimeTrigger 0,
 hexRotation :: Int -> Radians
 hexRotation x = Radians $ pi / 3 * fromIntegral x
 
+-- TODO: Make a lense instead
+groundPieces :: Board -> [(Placement, GroundPiece)]
+groundPieces = map snd . M.toList . _ground
+
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
   _transitions = mempty,
+  _ground = M.fromList
+    [((0, 1), (Placement (0, 1) (hexRotation 0), Consumer (Lattice [((0, 0), Fire)])))
+    ],
   _grid = [
       placePiece (0, 0) (hexRotation 0) (GrabberPiece Grabber {
           _program = moveRightProgram
@@ -272,7 +322,7 @@ buildBoard = Board {
     , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
     --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
     --  Lattice [((0, 0), Fire)]})
-    --, placePiece (0, 1) nullRotation (ProductPiece Product { playout =
-    --  Lattice [((0, 0), Fire)]})
+--    , placePiece (0, 1) (hexRotation 0) (ProductPiece Product { playout =
+--      Lattice [((0, 0), Fire)]})
   ]
 }
