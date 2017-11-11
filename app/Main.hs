@@ -12,7 +12,12 @@ import Data.Time.Clock ( getCurrentTime, diffUTCTime, UTCTime )
 import Control.Lens hiding (element)
 import Control.Monad (forM_, when)
 import System.Exit ( exitFailure, exitSuccess )
+import Data.Monoid ((<>))
 import Debug.Trace
+
+import Data.Text.Lazy (unpack)
+
+import Text.Pretty.Simple (pShow)
 
 data State = State
   { board :: IORef Board
@@ -197,7 +202,7 @@ gameLoop state = do
   let d = realToFrac (diffUTCTime t' t) / stepTime
   let b' = if d + (b ^. sinceLastUpdate) >= 1 then
              -- TODO: Some protection for falling behind maybe
-             trace ("\n\n=================\n" ++ show (stepBoard b))
+             trace ("\n\n=================\n" <> (unpack . pShow) (stepBoard b))
              (stepBoard b) & sinceLastUpdate -~ 1
            else
              b & sinceLastUpdate +~ d
