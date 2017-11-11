@@ -2,6 +2,8 @@ module Main where
 
 import Lib hiding (Position)
 import Hex
+import Types hiding (Position)
+import Lattice
 import Data.List (find)
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
@@ -71,11 +73,12 @@ display state = do
       let o = o' * (180 / pi) in
 
       case piece of
-        Producer (Lattice xs) -> do
+        Producer lattice -> do
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
                 translate $ Vector3 x y (0 :: Double)
@@ -83,11 +86,12 @@ display state = do
                 scale 0.40 0.40 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
                 renderPrimitive Polygon hexVertices
-        Consumer (Lattice xs) -> do
+        Consumer lattice -> do
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
                 translate $ Vector3 x y (0 :: Double)
@@ -123,14 +127,14 @@ display state = do
 
           case grabber ^. contents of
             Nothing -> return ()
-            Just (Lattice xs) -> preservingMatrix $ do
+            Just lattice -> preservingMatrix $ do
               let (x, y) = hexToPixel pos
 
               translate $ Vector3 x y (0 :: Double)
               rotate o $ Vector3 (0 :: Double) 0 1
               translate $ Vector3 (sqrt 3 :: Float) 0 0
 
-              forM_ xs $ \(lpos, element) ->
+              forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
                 preservingMatrix $ do
                   let (x, y) = hexToPixel lpos
                   translate $ Vector3 x y (0 :: Double)
@@ -138,11 +142,11 @@ display state = do
                   scale 0.90 0.90 (1.0 :: Float)
                   color (Color3 0.7 0.0 (0.0 :: GLfloat))
                   renderPrimitive Polygon hexVertices
-        LatticePiece (Lattice xs) ->
+        LatticePiece lattice ->
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
                 let (x, y) = hexToPixel lpos
                 translate $ Vector3 x y (0 :: Double)
