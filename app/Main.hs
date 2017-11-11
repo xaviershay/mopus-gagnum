@@ -218,6 +218,7 @@ mouseDrag state pos = do
 mouse :: State -> MouseCallback
 mouse state RightButton Down pos = writeIORef (lastPanPos state) (Just pos)
 mouse state RightButton Up pos = writeIORef (lastPanPos state) Nothing
+mouse _ _ _ _ = return ()
 
 main :: IO ()
 main = do
