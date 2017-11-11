@@ -174,10 +174,7 @@ consumeAndProduce = do
     x <- groundAt p1
 
     case x of
-      Just (p2, Consumer l2) -> if (p1, l1) == (p2, l2) then
-                                  removePiece p1
-                                else
-                                  return ()
+      Just (p2, Consumer l2) -> when ((p1, l1) == (p2, l2)) (removePiece p1)
       _ -> return ()
 
 
@@ -188,12 +185,8 @@ consumeAndProduce = do
 
     existing <- mapM pieceAt absolutePositions
 
-    if null $ catMaybes existing then
-      -- Copy lattice to board
+    when (null $ catMaybes existing) $
       addPiece (rootPos, LatticePiece (Lattice xs))
-    else
-      -- Something is blocking
-      return ()
 
 addPiece :: (Placement, Piece) -> EvalBoard ()
 addPiece x = grid %= (:) x

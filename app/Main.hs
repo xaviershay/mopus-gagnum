@@ -191,7 +191,7 @@ gameLoop state = do
   let d = realToFrac (diffUTCTime t' t) / stepTime
   let b' = if d + (b ^. sinceLastUpdate) >= 1 then
              -- TODO: Some protection for falling behind maybe
-             trace ("\n\n=================\n" ++ (show $ stepBoard b))
+             trace ("\n\n=================\n" ++ show (stepBoard b))
              (stepBoard b) & sinceLastUpdate -~ 1
            else
              b & sinceLastUpdate +~ d
@@ -228,7 +228,7 @@ mouseDrag state pos = do
       Size sx _ <- get windowSize
       let scalingFactor = fromIntegral sx / (gridSize * 2)
       let pn' = addPan scalingFactor pn relativePos
-      writeIORef (pan state) $ pn'
+      writeIORef (pan state) pn'
       writeIORef (lastPanPos state) $ Just pos
 
 mouse :: State -> MouseCallback
