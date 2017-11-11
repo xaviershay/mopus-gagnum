@@ -1,6 +1,8 @@
 -- Hex functions translated from Red Blob Games' articles
 module Hex where
 
+import Types
+
 hexToPixel :: RealFloat a => (Integer, Integer) -> (a, a)
 hexToPixel (q, r) =
   (x, y)
@@ -33,3 +35,7 @@ cubeToAxial (x, y, z) = (x, z)
 
 hexRound :: RealFloat a => (a, a) -> (Integer, Integer)
 hexRound = cubeToAxial . cubeRound . axialToCube
+
+hexRotation :: Int -> Radians
+hexRotation x = Radians $ pi / 3 * fromIntegral x
+

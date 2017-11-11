@@ -1,7 +1,10 @@
 module Main where
 
-import Lib hiding (Position)
+import Lib
 import Hex
+import Types as T hiding (Position)
+import qualified Types as T
+import Lattice
 import Data.List (find)
 import Graphics.UI.GLUT
 import Data.IORef ( IORef, newIORef, writeIORef )
@@ -71,25 +74,27 @@ display state = do
       let o = o' * (180 / pi) in
 
       case piece of
-        Producer (Lattice xs) -> do
+        Producer lattice -> do
           preservingMatrix $ do
-            let (x, y) = hexToPixel pos
+            let (x, y) = hexToPixel (toTuple pos)
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
-                let (x, y) = hexToPixel lpos
+                let (x, y) = hexToPixel (toTuple lpos)
                 translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.40 0.40 (1.0 :: Float)
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
                 renderPrimitive Polygon hexVertices
-        Consumer (Lattice xs) -> do
+        Consumer lattice -> do
           preservingMatrix $ do
-            let (x, y) = hexToPixel pos
+            let (x, y) = hexToPixel (toTuple pos)
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
-                let (x, y) = hexToPixel lpos
+                let (x, y) = hexToPixel (toTuple lpos)
                 translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)
@@ -102,7 +107,7 @@ display state = do
       case d of
         GrabberPiece grabber -> do
           preservingMatrix $ do
-            let (x, y) = hexToPixel pos
+            let (x, y) = hexToPixel (toTuple pos)
             color (Color3 1 1 (1 :: GLfloat))
             translate $ Vector3 x y (0 :: Double)
             rotate 90 $ Vector3 (0 :: Float) 0 1
@@ -110,7 +115,7 @@ display state = do
             renderPrimitive Polygon hexVertices
 
           preservingMatrix $ do
-            let (x, y) = hexToPixel pos
+            let (x, y) = hexToPixel (toTuple pos)
             translate $ Vector3 x y (0.1 :: Double)
             rotate o $ Vector3 (0 :: Double) 0 1 -- TODO: toDegrees?
             translate $ Vector3 (sqrt 3 :: Float) 0 0
@@ -123,28 +128,29 @@ display state = do
 
           case grabber ^. contents of
             Nothing -> return ()
-            Just (Lattice xs) -> preservingMatrix $ do
-              let (x, y) = hexToPixel pos
+            Just lattice -> preservingMatrix $ do
+              let (x, y) = hexToPixel (toTuple pos)
 
               translate $ Vector3 x y (0 :: Double)
               rotate o $ Vector3 (0 :: Double) 0 1
               translate $ Vector3 (sqrt 3 :: Float) 0 0
 
-              forM_ xs $ \(lpos, element) ->
+              forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
                 preservingMatrix $ do
-                  let (x, y) = hexToPixel lpos
+                  let (x, y) = hexToPixel (toTuple lpos)
                   translate $ Vector3 x y (0 :: Double)
                   rotate 90 $ Vector3 (0 :: Float) 0 1
                   scale 0.90 0.90 (1.0 :: Float)
                   color (Color3 0.7 0.0 (0.0 :: GLfloat))
                   renderPrimitive Polygon hexVertices
-        LatticePiece (Lattice xs) ->
+        LatticePiece lattice ->
           preservingMatrix $ do
-            let (x, y) = hexToPixel pos
+            let (x, y) = hexToPixel (toTuple pos)
             translate $ Vector3 x y (0 :: Double)
-            forM_ xs $ \(lpos, element) ->
+            rotate o $ Vector3 (0 :: Double) 0 1
+            forM_ (unpackLattice lattice) $ \(element, lpos, edges) ->
               preservingMatrix $ do
-                let (x, y) = hexToPixel lpos
+                let (x, y) = hexToPixel (toTuple lpos)
                 translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)

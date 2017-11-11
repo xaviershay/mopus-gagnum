@@ -1,9 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Lib where
 
+import Types
 import Hex
+import Lattice
 
 import Data.List (find)
 import Data.Maybe (mapMaybe, fromJust, catMaybes)
@@ -17,54 +18,41 @@ import Control.Lens hiding (element)
 
 data RadialDirection = RRight | RLeft deriving (Show, Eq)
 
-type Position = (Integer, Integer)
-
-newtype Radians = Radians Double deriving (Show, Eq, Num, Fractional, Floating, Real, Ord)
-
 newtype Trigger = TimeTrigger Integer deriving (Show, Eq)
 
 data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show, Eq)
 
 type Program = [(Trigger, [Action])]
 
-data Element = Fire | Water | Earth | Air deriving (Show, Eq)
-
-newtype Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
+--newtype Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
 
 data Grabber = Grabber {
     _program :: Program
   , _closed :: Bool
-  , _contents :: Maybe (Lattice Element)
+  , _contents :: Maybe Lattice
 } deriving (Show, Eq)
 makeLenses ''Grabber
 
 -- TODO: combine Reagent / Product definitions somehow?
 newtype Reagent = Reagent {
-  rlayout :: Lattice Element
+  rlayout :: Lattice
 } deriving (Show, Eq)
 
 newtype Product = Product {
-  playout :: Lattice Element
+  playout :: Lattice
 } deriving (Show, Eq)
 
 data Piece =
     GrabberPiece Grabber
-  | LatticePiece (Lattice Element)
+  | LatticePiece Lattice
   deriving (Show, Eq)
 
 data GroundPiece =
-    Producer (Lattice Element)
-  | Consumer (Lattice Element)
+    Producer Lattice
+  | Consumer Lattice
   --  ReagentPiece Reagent
   -- | ProductPiece Product
   deriving (Show, Eq)
-
-data Placement = Placement Position Radians deriving (Show, Eq)
-
-instance Monoid Placement where
-  mempty = Placement (0, 0) 0
-  Placement (x1, y1) r1 `mappend` Placement (x2, y2) r2 =
-    Placement (x1 + x2, y1 + y2) (r1 + r2)
 
 type GrabTarget = (Position, Position, Piece)
 
@@ -90,8 +78,8 @@ makeLenses ''Board
 
 type EvalBoard a = WriterT TransitionList (StateT Board Identity) a
 
-placePiece :: Position -> Radians -> Piece -> (Placement, Piece)
-placePiece b o p = (Placement b o, p)
+placePiece :: (Integer, Integer) -> Radians -> Piece -> (Placement, Piece)
+placePiece (x, y) o p = (Placement (Position x y) o, p)
 
 applyTransitions :: TransitionList -> Delta -> (Placement, Piece) -> (Placement, Piece)
 applyTransitions ts d x@(key@(Placement pos r), piece) =
@@ -139,7 +127,7 @@ dropContents = do
           updateGrabber pos (grabber & contents .~ Nothing)
     emptyGrabbers _ = return ()
 
-extractLattices :: EvalBoard [(Placement, Lattice Element)]
+extractLattices :: EvalBoard [(Placement, Lattice)]
 extractLattices = do
   g <- use grid
 
@@ -149,14 +137,14 @@ extractLattices = do
     f (p, LatticePiece l) = Just (p, l)
     f _ = Nothing
 
-extractProducers :: EvalBoard [(Placement, Lattice Element)]
+extractProducers :: EvalBoard [(Placement, Lattice)]
 extractProducers = do
   g <- use ground
 
   return (mapMaybe f (M.toList g))
 
   where
-    f :: (Position, (Placement, GroundPiece)) -> Maybe (Placement, Lattice Element)
+    f :: (Position, (Placement, GroundPiece)) -> Maybe (Placement, Lattice)
     f (_, (p, Producer l)) = Just (p, l)
     f _ = Nothing
 
@@ -173,20 +161,25 @@ consumeAndProduce = do
   forM_ lattices $ \(p1, l1) -> do
     x <- groundAt p1
 
+
     case x of
-      Just (p2, Consumer l2) -> when ((p1, l1) == (p2, l2)) (removePiece p1)
+    -- p1 Placement, l1 Lattice
+      Just (p2, Consumer l2) -> do
+        traceM $ "Lattice on ground: " <> show (p1, l1, absoluteLattice p1 l1)
+        trace ("Consumer lattice: " <> show (absoluteLattice p2 l2)) $ when (absoluteLattice p1 l1 == absoluteLattice p2 l2) (removePiece p1)
       _ -> return ()
 
 
   producers <- extractProducers
 
-  forM_ producers $ \(rootPos, Lattice xs) -> do
-    let absolutePositions = map (\(p, _) -> rootPos <> Placement p 0) xs
+  forM_ producers $ \(rootPos, lattice) -> do
+    let absolutePositions = map (\p -> rootPos <> Placement p 0)
+                              (footprint lattice)
 
     existing <- mapM pieceAt absolutePositions
 
     when (null $ catMaybes existing) $
-      addPiece (rootPos, LatticePiece (Lattice xs))
+      addPiece (rootPos, LatticePiece lattice)
 
 addPiece :: (Placement, Piece) -> EvalBoard ()
 addPiece x = grid %= (:) x
@@ -217,11 +210,12 @@ currentRotation (Placement _ x) = x
 
 clawLocation :: (Placement, Grabber) -> Placement
 clawLocation (p, _) =
-  let pos = pixelToHex $ hexToPixel (currentPos p)
-              & _1 %~ ((cos o * sqrt 3) +)
-              & _2 %~ ((sin o * sqrt 3) +) in
+  let Position x y = currentPos p in
+  let (x', y') = pixelToHex $ hexToPixel (x, y)
+                & _1 %~ ((cos o * sqrt 3) +)
+                & _2 %~ ((sin o * sqrt 3) +) in
 
-  Placement pos (Radians 0) -- TODO: Allow for claw rotation
+  Placement (mkPos x' y') (currentRotation p) -- TODO: Allow for claw rotation
 
   where
     (Radians o) = currentRotation p
@@ -308,9 +302,6 @@ moveRightProgram = [ (TimeTrigger 0,
                      , Rotate RLeft
                      ])]
 
-hexRotation :: Int -> Radians
-hexRotation x = Radians $ pi / 3 * fromIntegral x
-
 -- TODO: Make a lense instead
 groundPieces :: Board -> [(Placement, GroundPiece)]
 groundPieces = map snd . M.toList . _ground
@@ -320,8 +311,14 @@ buildBoard = Board {
   _sinceLastUpdate = 0,
   _transitions = mempty,
   _ground = M.fromList
-    [ ((0, 1), (Placement (0, 1) (hexRotation 0), Consumer (Lattice [((0, 0), Fire)])))
-    , ((1, 0), (Placement (1, 0) (hexRotation 0), Producer (Lattice [((0, 0), Fire)])))
+    [ (mkPos 0 1, (Placement (mkPos 0 1) (hexRotation 5), Consumer (packLattice
+      [(Fire, mkPos 0 0, [mkPos 1 0])
+      ,(Fire, mkPos 1 0, [])
+      ])))
+    , (mkPos 1 0, (Placement (mkPos 1 0) (hexRotation 0), Producer (packLattice
+      [(Fire, mkPos 0 0, [mkPos 1 0])
+      ,(Fire, mkPos 1 0, [])
+      ])))
     ],
   _grid = [
       placePiece (0, 0) (hexRotation 0) (GrabberPiece Grabber {
@@ -342,7 +339,9 @@ buildBoard = Board {
 --    , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
     --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
     --  Lattice [((0, 0), Fire)]})
---    , placePiece (0, 1) (hexRotation 0) (ProductPiece Product { playout =
---      Lattice [((0, 0), Fire)]})
+--    , placePiece (-2, -1) (hexRotation 5) (LatticePiece $ packLattice
+--      [(Fire, mkPos 0 0, [mkPos 1 0])
+--      ,(Fire, mkPos 1 0, [])
+--      ])
   ]
 }
