@@ -71,6 +71,18 @@ display state = do
       let o = o' * (180 / pi) in
 
       case piece of
+        Producer (Lattice xs) -> do
+          preservingMatrix $ do
+            let (x, y) = hexToPixel pos
+            translate $ Vector3 x y (0 :: Double)
+            forM_ xs $ \(lpos, element) ->
+              preservingMatrix $ do
+                let (x, y) = hexToPixel lpos
+                translate $ Vector3 x y (0 :: Double)
+                rotate 90 $ Vector3 (0 :: Float) 0 1
+                scale 0.40 0.40 (1.0 :: Float)
+                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                renderPrimitive Polygon hexVertices
         Consumer (Lattice xs) -> do
           preservingMatrix $ do
             let (x, y) = hexToPixel pos
@@ -126,19 +138,6 @@ display state = do
                   scale 0.90 0.90 (1.0 :: Float)
                   color (Color3 0.7 0.0 (0.0 :: GLfloat))
                   renderPrimitive Polygon hexVertices
-
-        --ReagentPiece Reagent { rlayout = Lattice xs } ->
-        --  preservingMatrix $ do
-        --    let (x, y) = hexToPixel pos
-        --    translate $ Vector3 x y (0 :: Double)
-        --    forM_ xs $ \(lpos, element) ->
-        --      preservingMatrix $ do
-        --        let (x, y) = hexToPixel lpos
-        --        translate $ Vector3 x y (0 :: Double)
-        --        rotate 90 $ Vector3 (0 :: Float) 0 1
-        --        scale 0.90 0.90 (1.0 :: Float)
-        --        color (Color3 0.7 0.0 (0.0 :: GLfloat))
-        --        renderPrimitive Polygon hexVertices
         LatticePiece (Lattice xs) ->
           preservingMatrix $ do
             let (x, y) = hexToPixel pos

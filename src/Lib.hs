@@ -6,7 +6,7 @@ module Lib where
 import Hex
 
 import Data.List (find)
-import Data.Maybe (mapMaybe, fromJust)
+import Data.Maybe (mapMaybe, fromJust, catMaybes)
 import Data.Fixed (mod')
 import qualified Data.Map.Strict as M
 import Debug.Trace
@@ -60,6 +60,11 @@ data GroundPiece =
   deriving (Show, Eq)
 
 data Placement = Placement Position Radians deriving (Show, Eq)
+
+instance Monoid Placement where
+  mempty = Placement (0, 0) 0
+  Placement (x1, y1) r1 `mappend` Placement (x2, y2) r2 =
+    Placement (x1 + x2, y1 + y2) (r1 + r2)
 
 type GrabTarget = (Position, Position, Piece)
 
@@ -144,6 +149,17 @@ extractLattices = do
     f (p, LatticePiece l) = Just (p, l)
     f _ = Nothing
 
+extractProducers :: EvalBoard [(Placement, Lattice Element)]
+extractProducers = do
+  g <- use ground
+
+  return (mapMaybe f (M.toList g))
+
+  where
+    f :: (Position, (Placement, GroundPiece)) -> Maybe (Placement, Lattice Element)
+    f (_, (p, Producer l)) = Just (p, l)
+    f _ = Nothing
+
 groundAt :: Placement -> EvalBoard (Maybe (Placement, GroundPiece))
 groundAt (Placement p _) = do
   g <- use ground
@@ -165,10 +181,20 @@ consumeAndProduce = do
       _ -> return ()
 
 
+  producers <- extractProducers
 
-  -- TODO
-  -- For each ground producer
-  --   check that none of its lattice spots has something on the board
+  forM_ producers $ \(rootPos, Lattice xs) -> do
+    let absolutePositions = map (\(p, _) -> rootPos <> Placement p 0) xs
+
+    existing <- mapM pieceAt absolutePositions
+
+    if null $ catMaybes existing then
+      -- Copy lattice to board
+      addPiece (rootPos, LatticePiece (Lattice xs))
+    else
+      -- Something is blocking
+      return ()
+
 addPiece :: (Placement, Piece) -> EvalBoard ()
 addPiece x = grid %= (:) x
 
@@ -301,7 +327,8 @@ buildBoard = Board {
   _sinceLastUpdate = 0,
   _transitions = mempty,
   _ground = M.fromList
-    [((0, 1), (Placement (0, 1) (hexRotation 0), Consumer (Lattice [((0, 0), Fire)])))
+    [ ((0, 1), (Placement (0, 1) (hexRotation 0), Consumer (Lattice [((0, 0), Fire)])))
+    , ((1, 0), (Placement (1, 0) (hexRotation 0), Producer (Lattice [((0, 0), Fire)])))
     ],
   _grid = [
       placePiece (0, 0) (hexRotation 0) (GrabberPiece Grabber {
@@ -309,17 +336,17 @@ buildBoard = Board {
         , _closed = False
         , _contents = Nothing
       })
-    , placePiece (2, 0) (hexRotation 4) (GrabberPiece Grabber {
-          _program = moveRightProgram
-        , _closed = False
-        , _contents = Nothing
-      })
-    , placePiece (0, 2) (hexRotation 2) (GrabberPiece Grabber {
-          _program = moveRightProgram
-        , _closed = False
-        , _contents = Nothing
-      })
-    , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
+--    , placePiece (2, 0) (hexRotation 4) (GrabberPiece Grabber {
+--          _program = moveRightProgram
+--        , _closed = False
+--        , _contents = Nothing
+--      })
+--    , placePiece (0, 2) (hexRotation 2) (GrabberPiece Grabber {
+--          _program = moveRightProgram
+--        , _closed = False
+--        , _contents = Nothing
+--      })
+--    , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
     --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
     --  Lattice [((0, 0), Fire)]})
 --    , placePiece (0, 1) (hexRotation 0) (ProductPiece Product { playout =
