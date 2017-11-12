@@ -70,12 +70,12 @@ display state = do
   let t = _clock b
   let ts = _transitions b
   let delta = _sinceLastUpdate b
-  let ps = map (applyTransitions ts delta) (_grid b)
+  let ps = piecesWithTransitions b
 
   preservingMatrix $ do
     translate $ Vector3 (fst p) (snd p) 0
 
-    forM_ (groundPieces b) $ \(Placement pos (Radians o'), piece) ->
+    forM_ (groundPiecesWithTransitions b) $ \((Placement pos (Radians o'), piece), transition) ->
       let o = o' * (180 / pi) in
 
       case piece of
@@ -90,7 +90,8 @@ display state = do
                 translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.40 0.40 (1.0 :: Float)
-                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                color (Color3 0.7 0.0 (0.0 :: GLdouble))
+
                 renderPrimitive Polygon hexVertices
         Consumer lattice -> do
           preservingMatrix $ do
@@ -106,10 +107,14 @@ display state = do
                 color (Color3 0.7 0.0 (0.0 :: GLfloat))
                 renderPrimitive LineLoop hexVertices
 
-    forM_ ps $ \(Placement pos (Radians o'), d) ->
-      let o = o' * (180 / pi) in
+    forM_ ps $ \((Placement pos r, piece), transition) -> do
+      let o' = case transition of
+                 Just (ToRotation r') -> r + (r' - r) * (Radians $ realToFrac delta)
+                 _                    -> r
 
-      case d of
+      let o = toDegrees o'
+
+      case piece of
         GrabberPiece grabber -> do
           preservingMatrix $ do
             let (x, y) = hexToPixel (toTuple pos)
@@ -159,20 +164,13 @@ display state = do
                 translate $ Vector3 x y (0 :: Double)
                 rotate 90 $ Vector3 (0 :: Float) 0 1
                 scale 0.90 0.90 (1.0 :: Float)
-                color (Color3 0.7 0.0 (0.0 :: GLfloat))
+                let s = case transition of
+                                Just Produce -> minimum [1.0, delta * 1.2]
+                                Just Consume -> maximum [0.0, 1 - delta * 1.2]
+                                _            -> 1.0
+                scale s s 1.0
+                color (Color4 0.7 0.0 0.0 (0.0 :: GLdouble))
                 renderPrimitive Polygon hexVertices
-        --ProductPiece Product { playout = Lattice xs } ->
-        --  preservingMatrix $ do
-        --    let (x, y) = hexToPixel pos
-        --    translate $ Vector3 x y (0 :: Double)
-        --    forM_ xs $ \(lpos, element) ->
-        --      preservingMatrix $ do
-        --        let (x, y) = hexToPixel lpos
-        --        translate $ Vector3 x y (0 :: Double)
-        --        rotate 90 $ Vector3 (0 :: Float) 0 1
-        --        scale 0.90 0.90 (1.0 :: Float)
-        --        color (Color3 0.7 0.0 (0.0 :: GLfloat))
-        --        renderPrimitive LineLoop hexVertices
 
   color (Color3 1.0 1.0 (1.0 :: GLfloat))
   currentRasterPosition $= Vertex4 (-4.7) (-4.7) 0 1
@@ -250,7 +248,7 @@ mouse _ _ _ _ = return ()
 main :: IO ()
 main = do
   _ <- getArgsAndInitialize
-  initialDisplayMode $= [ DoubleBuffered, RGBMode, WithDepthBuffer ]
+  initialDisplayMode $= [ DoubleBuffered, WithAlphaComponent, WithDepthBuffer ]
   initialWindowSize $= Size 250 250
   initialWindowPosition $= Position 100 100
   _ <- createWindow "Mopus Gagnum"

@@ -15,6 +15,9 @@ toTuple (Position x y) = (x, y)
 
 newtype Radians = Radians Double deriving (Show, Eq, Num, Fractional, Floating, Real, Ord)
 
+toDegrees :: Radians -> Double
+toDegrees (Radians x) = x * (180 / pi)
+
 data Element = Fire | Water | Earth | Air deriving (Show, Eq)
 
 data Placement = Placement Position Radians deriving (Show, Eq)

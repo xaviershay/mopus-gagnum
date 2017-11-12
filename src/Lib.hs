@@ -24,23 +24,12 @@ data Action = Rotate RadialDirection | ClawClose | ClawOpen deriving (Show, Eq)
 
 type Program = [(Trigger, [Action])]
 
---newtype Lattice a = Lattice [(Position, a)] deriving (Show, Eq) -- TODO: Add bonds
-
 data Grabber = Grabber {
     _program :: Program
   , _closed :: Bool
   , _contents :: Maybe Lattice
 } deriving (Show, Eq)
 makeLenses ''Grabber
-
--- TODO: combine Reagent / Product definitions somehow?
-newtype Reagent = Reagent {
-  rlayout :: Lattice
-} deriving (Show, Eq)
-
-newtype Product = Product {
-  playout :: Lattice
-} deriving (Show, Eq)
 
 data Piece =
     GrabberPiece Grabber
@@ -50,8 +39,6 @@ data Piece =
 data GroundPiece =
     Producer Lattice
   | Consumer Lattice
-  --  ReagentPiece Reagent
-  -- | ProductPiece Product
   deriving (Show, Eq)
 
 type GrabTarget = (Position, Position, Piece)
@@ -61,6 +48,8 @@ type Key = Placement
 data Transition =
     ToRotation Radians
   | ToClaw Bool
+  | Consume
+  | Produce
   deriving (Show)
 
 -- TODO: Switch to Seq for better concatenation performance
@@ -81,17 +70,29 @@ type EvalBoard a = WriterT TransitionList (StateT Board Identity) a
 placePiece :: (Integer, Integer) -> Radians -> Piece -> (Placement, Piece)
 placePiece (x, y) o p = (Placement (Position x y) o, p)
 
-applyTransitions :: TransitionList -> Delta -> (Placement, Piece) -> (Placement, Piece)
-applyTransitions ts d x@(key@(Placement pos r), piece) =
-  case find (\(k, _) -> k == key) ts of
-    Just (k, transition) -> applyTransition transition d x
-    Nothing              -> x
+-- TODO: Make a lense instead
+groundPieces :: Board -> [(Placement, GroundPiece)]
+groundPieces = map snd . M.toList . _ground
 
-applyTransition :: Transition -> Delta -> (Placement, Piece) -> (Placement, Piece)
+groundPiecesWithTransitions :: Board -> [((Placement, GroundPiece), Maybe Transition)]
+groundPiecesWithTransitions b = map f (M.toList $ b ^. ground)
+  where
+    f :: (Position, (Placement, GroundPiece)) -> ((Placement, GroundPiece), Maybe Transition)
+    f (_, x@(placement, piece)) = (x, snd <$> find (\(k, _) -> k == placement) (b ^. transitions))
+
+piecesWithTransitions :: Board -> [((Placement, Piece), Maybe Transition)]
+piecesWithTransitions b = map f (b ^. grid)
+  where
+    f :: (Placement, Piece) -> ((Placement, Piece), Maybe Transition)
+    f x@(placement, piece) = (x, snd <$> find (\(k, _) -> k == placement) (b ^. transitions))
+
+applyTransition :: Transition -> Delta -> (Placement, Piece) -> (Placement, Maybe Piece)
 applyTransition (ToClaw c) _ (placement, GrabberPiece grabber) =
-  (placement, GrabberPiece $ grabber & closed .~ c)
+  (placement, Just $ GrabberPiece $ grabber & closed .~ c)
 applyTransition (ToRotation r') delta (Placement p r, piece) =
-  (Placement p $ r + (r' - r) * (Radians $ realToFrac delta), piece)
+  (Placement p $ r + (r' - r) * (Radians $ realToFrac delta), Just piece)
+applyTransition Consume delta (pl, x) = (pl, if delta < 1 then Just x else Nothing)
+applyTransition Produce delta (pl, x) = (pl, Just x) -- TODO: Add "collidable" property
 
 dropContents :: EvalBoard ()
 dropContents = do
@@ -112,7 +113,9 @@ dropContents = do
       let newPiece = applyTransition t 1.0 (k, fromJust oldPiece)
 
       removePiece k
-      addPiece newPiece
+      case newPiece of
+        (placement, Just piece) -> addPiece (placement, piece)
+        _ -> return ()
 
       f ts
 
@@ -155,20 +158,15 @@ groundAt (Placement p _) = do
 
 consumeAndProduce :: EvalBoard ()
 consumeAndProduce = do
-  -- For each lattice on board
-  -- Find matching ground consumer
   lattices <- extractLattices
   forM_ lattices $ \(p1, l1) -> do
     x <- groundAt p1
 
-
     case x of
-    -- p1 Placement, l1 Lattice
-      Just (p2, Consumer l2) -> do
-        traceM $ "Lattice on ground: " <> show (p1, l1, absoluteLattice p1 l1)
-        trace ("Consumer lattice: " <> show (absoluteLattice p2 l2)) $ when (absoluteLattice p1 l1 == absoluteLattice p2 l2) (removePiece p1)
+      Just (p2, Consumer l2) ->
+        when (absoluteLattice p1 l1 == absoluteLattice p2 l2)
+             (addTransition p1 Consume)
       _ -> return ()
-
 
   producers <- extractProducers
 
@@ -178,7 +176,8 @@ consumeAndProduce = do
 
     existing <- mapM pieceAt absolutePositions
 
-    when (null $ catMaybes existing) $
+    when (null $ catMaybes existing) $ do
+      addTransition rootPos Produce
       addPiece (rootPos, LatticePiece lattice)
 
 addPiece :: (Placement, Piece) -> EvalBoard ()
@@ -302,10 +301,6 @@ moveRightProgram = [ (TimeTrigger 0,
                      , Rotate RLeft
                      ])]
 
--- TODO: Make a lense instead
-groundPieces :: Board -> [(Placement, GroundPiece)]
-groundPieces = map snd . M.toList . _ground
-
 buildBoard = Board {
   _clock = 0,
   _sinceLastUpdate = 0,
@@ -337,8 +332,6 @@ buildBoard = Board {
 --        , _contents = Nothing
 --      })
 --    , placePiece (1, 0) (hexRotation 0) (LatticePiece (Lattice [((0, 0), Fire)]))
-    --, placePiece (1, 0) nullRotation (ReagentPiece Reagent { rlayout =
-    --  Lattice [((0, 0), Fire)]})
 --    , placePiece (-2, -1) (hexRotation 5) (LatticePiece $ packLattice
 --      [(Fire, mkPos 0 0, [mkPos 1 0])
 --      ,(Fire, mkPos 1 0, [])

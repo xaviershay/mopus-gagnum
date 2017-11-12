@@ -12,7 +12,7 @@ import Data.Graph
 import Hex
 import Types
 
-data Lattice = Lattice (Graph, Vertex -> (Element, Position, [Position]), Position -> Maybe Vertex)
+newtype Lattice = Lattice (Graph, Vertex -> (Element, Position, [Position]), Position -> Maybe Vertex)
 
 instance Show Lattice where
   show = show . unpackLattice
