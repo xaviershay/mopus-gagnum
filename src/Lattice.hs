@@ -23,13 +23,35 @@ instance Eq Lattice where
 
 data LatticeGraph = LatticeGraph [(Position, Element)] [(Position, Position)]
 
+toGraph :: Lattice -> Graph
+toGraph (Lattice (g, _, _)) = g
+
+extractPositions :: Lattice -> [Position]
+extractPositions l = map f . unpackLattice $ l
+  where
+    f (_, p, _) = p
+
+-- TODO: Error on graphs with unconnected components?
 packLattice :: [(Element, Position, [Position])] -> Lattice
 packLattice = Lattice . graphFromEdges
 
-fuse :: Lattice -> Lattice -> Placement -> Position -> Lattice
-fuse = undefined
+-- Pre-condition: l1 and l2 are absolutely positioned, and share no nodes
+-- Pre-condition: p1 refers to an element in l1, p2 to l2
+-- Post-condition: returned lattice is a single connected component
+fuse :: Lattice -> Lattice -> Position -> Position -> Lattice
+fuse l1 l2 p1 p2 =
+  let l1' = unpackLattice l1 in
+  let l2' = unpackLattice l2 in
 
-unfuse :: Lattice -> Lattice -> Placement -> Position -> Lattice
+  packLattice . map f $ l1' <> l2'
+
+  where
+    f (x, p, es) = if p == p1 then
+                     (x, p, p2:es)
+                   else
+                     (x, p, es)
+
+unfuse :: Lattice -> Position -> Position -> (Lattice, Lattice)
 unfuse = undefined
 
 footprint :: Lattice -> [Position]
