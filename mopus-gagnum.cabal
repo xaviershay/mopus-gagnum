@@ -49,6 +49,7 @@ test-suite mopus-gagnum-test
                      , tasty
                      , tasty-hunit
                      , tasty-quickcheck
+                     , QuickCheck >= 2.10.1
                      , containers
                      , random
                      , fgl

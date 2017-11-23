@@ -7,6 +7,7 @@ import System.Random
 import Debug.Trace
 
 import Data.Graph (components)
+import qualified Data.Graph.Inductive as G
 import Data.List (intersect, delete)
 
 import Types
@@ -25,25 +26,13 @@ instance Arbitrary Element where
   arbitrary = elements [Fire, Water, Earth, Air]
 
 instance Arbitrary Lattice where
---  shrink = map packLattice . shrink' . unpackLattice
---    where
---      shrink' []  = [] -- Invalid lattice, but including for completeness
---      shrink' [x] = []
---      shrink' xs =
---        let edges = concatMap (\(_, p, es) -> map ((,) p) es) xs in
---
---        let disconnectedGraph = map (removeEdge xs) edges
---
---        where
---          removeEdge [] _ = []
---          removeEdge (x@(a, p, es):xs) edge@(p', e) =
---            if p == p' then
---              (a, p, delete e es):xs
---            else
---              x:removeEdge xs edge
+  shrink (Lattice g) = 
+    case G.edges g of
+      [] -> []
+      (e:es) -> map Lattice (splitGraph $ G.delEdge e g)
 
   arbitrary = do
-    ps <- arbitrary `suchThat` (not . null)
+    ps <- listOf1 arbitrary
     connected <- addEdges $ (map (\(p, e) -> (p, e, []))) ps
 
     return . packLattice $ connected
@@ -54,17 +43,23 @@ instance Arbitrary Lattice where
       addEdges [x] = return [x]
       addEdges ((p, e, _):xs) = do
         existing <- addEdges xs
-        toAdd <- sublistOf existing `suchThat` (not . null)
+        toAdd <- sublistOf1 existing
 
         let es = map (\(_, p, _) -> p) toAdd
 
         return ((p, e, es):existing)
 
-numComponents = length . components . toGraph
+sublistOf1 :: [a] -> Gen [a]
+sublistOf1 xs = sublistOf xs `suchThat` (not . null)
 
 latticeTests :: [TestTree]
 latticeTests =
-  [ testGroup "rotateHexAroundOrigin"
+  [ testGroup "packing and unpacking"
+    [ -- Reduce number of checks because for some reasons this property takes a while
+      testProperty "identity" . withMaxSuccess 20 $ \l ->
+        (packLattice . unpackLattice) l == l
+    ]
+  , testGroup "rotateHexAroundOrigin"
     [ testProperty "identity" $ \position ->
         position == rotateHexAroundOrigin (Radians 0) position
     ]
